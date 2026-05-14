@@ -1,0 +1,20 @@
+[
+  {
+    "id": "english_support",
+    "name": "English Support",
+    "description": "Inbound English-language support",
+    "min_proficiency": 3
+  },
+  {
+    "id": "billing",
+    "name": "Billing",
+    "description": "Invoice and payment issue handling",
+    "min_proficiency": 2
+  },
+  {
+    "id": "tech_support",
+    "name": "Technical Support",
+    "description": "L1 technical troubleshooting",
+    "min_proficiency": 4
+  }
+]

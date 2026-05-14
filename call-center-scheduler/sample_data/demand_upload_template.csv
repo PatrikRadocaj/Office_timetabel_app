@@ -1,0 +1,4 @@
+office_id,skill_id,slot_start,slot_end,required_agents,priority
+zagreb_hq,english_support,2026-05-10T09:00:00Z,2026-05-10T09:30:00Z,5,4
+zagreb_hq,billing,2026-05-10T09:00:00Z,2026-05-10T09:30:00Z,3,3
+split_branch,tech_support,2026-05-10T21:00:00Z,2026-05-10T21:30:00Z,2,5

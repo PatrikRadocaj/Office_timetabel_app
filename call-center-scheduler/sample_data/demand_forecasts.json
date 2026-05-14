@@ -1,0 +1,38 @@
+[
+  {
+    "id": "df_001",
+    "office_id": "zagreb_hq",
+    "skill_id": "english_support",
+    "slot_start": "2026-05-10T08:00:00Z",
+    "slot_end": "2026-05-10T08:30:00Z",
+    "required_agents": 4,
+    "priority": 4
+  },
+  {
+    "id": "df_002",
+    "office_id": "zagreb_hq",
+    "skill_id": "billing",
+    "slot_start": "2026-05-10T08:00:00Z",
+    "slot_end": "2026-05-10T08:30:00Z",
+    "required_agents": 2,
+    "priority": 3
+  },
+  {
+    "id": "df_003",
+    "office_id": "split_branch",
+    "skill_id": "tech_support",
+    "slot_start": "2026-05-10T20:00:00Z",
+    "slot_end": "2026-05-10T20:30:00Z",
+    "required_agents": 3,
+    "priority": 5
+  },
+  {
+    "id": "df_004",
+    "office_id": "split_branch",
+    "skill_id": "english_support",
+    "slot_start": "2026-05-10T20:00:00Z",
+    "slot_end": "2026-05-10T20:30:00Z",
+    "required_agents": 2,
+    "priority": 3
+  }
+]

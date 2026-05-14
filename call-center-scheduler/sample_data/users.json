@@ -1,0 +1,18 @@
+[
+  {
+    "id": "demo_admin_uid",
+    "email": "admin@example.com",
+    "full_name": "Demo Admin",
+    "role": "admin",
+    "office_id": "zagreb_hq",
+    "is_active": true
+  },
+  {
+    "id": "demo_supervisor_uid",
+    "email": "supervisor@example.com",
+    "full_name": "Demo Supervisor",
+    "role": "admin",
+    "office_id": "split_branch",
+    "is_active": true
+  }
+]

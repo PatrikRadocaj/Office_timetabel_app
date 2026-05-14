@@ -1,0 +1,16 @@
+[
+  {
+    "id": "zagreb_hq",
+    "name": "Zagreb HQ",
+    "timezone": "Europe/Zagreb",
+    "max_capacity": 80,
+    "address": "Savska cesta 1, Zagreb"
+  },
+  {
+    "id": "split_branch",
+    "name": "Split Branch",
+    "timezone": "Europe/Zagreb",
+    "max_capacity": 45,
+    "address": "Riva 12, Split"
+  }
+]

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "agent_ana",
+    "full_name": "Ana Kovac",
+    "email": "ana.kovac@example.com",
+    "office_id": "zagreb_hq",
+    "weekly_max_hours": 40,
+    "min_rest_hours": 10,
+    "shift_preference": "day",
+    "skills": [
+      { "skill_id": "english_support", "proficiency": 4 },
+      { "skill_id": "billing", "proficiency": 3 }
+    ],
+    "availability": [
+      { "day_of_week": 0, "start_hour": 8, "end_hour": 18 },
+      { "day_of_week": 1, "start_hour": 8, "end_hour": 18 },
+      { "day_of_week": 2, "start_hour": 8, "end_hour": 18 },
+      { "day_of_week": 3, "start_hour": 8, "end_hour": 18 },
+      { "day_of_week": 4, "start_hour": 8, "end_hour": 18 }
+    ]
+  },
+  {
+    "id": "agent_marko",
+    "full_name": "Marko Juric",
+    "email": "marko.juric@example.com",
+    "office_id": "split_branch",
+    "weekly_max_hours": 38,
+    "min_rest_hours": 10,
+    "shift_preference": "night",
+    "skills": [
+      { "skill_id": "english_support", "proficiency": 3 },
+      { "skill_id": "tech_support", "proficiency": 5 }
+    ],
+    "availability": [
+      { "day_of_week": 0, "start_hour": 18, "end_hour": 23 },
+      { "day_of_week": 1, "start_hour": 18, "end_hour": 23 },
+      { "day_of_week": 2, "start_hour": 18, "end_hour": 23 },
+      { "day_of_week": 3, "start_hour": 18, "end_hour": 23 },
+      { "day_of_week": 4, "start_hour": 18, "end_hour": 23 }
+    ]
+  },
+  {
+    "id": "agent_iva",
+    "full_name": "Iva Basic",
+    "email": "iva.basic@example.com",
+    "office_id": "zagreb_hq",
+    "weekly_max_hours": 40,
+    "min_rest_hours": 10,
+    "shift_preference": "any",
+    "skills": [
+      { "skill_id": "billing", "proficiency": 4 },
+      { "skill_id": "tech_support", "proficiency": 4 }
+    ],
+    "availability": []
+  }
+]
