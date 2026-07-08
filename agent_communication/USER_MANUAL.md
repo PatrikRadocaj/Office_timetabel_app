@@ -168,7 +168,7 @@ Admins can manage:
 - Admin summary metrics and coverage gaps
 - Offices, including create, edit, and delete
 - Skills, including create, edit, and delete
-- Agents, including create, edit, delete, and skill assignment changes
+- Agents, including create, edit, delete, skill assignment changes, and availability windows
 - Demand forecasts
 - CSV demand uploads
 - Schedule generation
@@ -193,8 +193,9 @@ Admins can open the admin area from the dashboard using the Admin Panel button, 
 2. Open the admin area.
 3. Use the create forms to add new offices, skills, or agents.
 4. In Data Preview, use Edit to change an existing office, skill, or agent inline.
-5. Use Delete to remove an item after confirming the browser prompt.
-6. If the backend rejects an update or delete, review the alert banner for the exact error.
+5. For agents, use Availability to add office-local weekday/hour windows. Monday is 0 and Sunday is 6. Leave availability empty when the agent should be treated as always available.
+6. Use Delete to remove an item after confirming the browser prompt.
+7. If the backend rejects an update or delete, review the alert banner for the exact error.
 
 ### Add Demand Forecasts
 
@@ -215,6 +216,8 @@ When a daily demand save uses `replace_existing_day=false`, the backend writes a
 4. Generate the schedule.
 5. Review the schedule ID, total required agents, total assigned agents, uncovered demand, and assignment rows.
 6. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
+
+The scheduler respects agent availability windows. Agents with no availability windows are treated as always available.
 
 Note: the schedule generation start/end controls use the admin browser's local timezone. Demand days are defined in each office's timezone, so adjust the window when generating schedules for offices in a different timezone.
 

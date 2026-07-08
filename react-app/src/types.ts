@@ -38,6 +38,12 @@ export interface AgentSkill {
   proficiency: number;
 }
 
+export interface TimeWindow {
+  day_of_week: number;
+  start_hour: number;
+  end_hour: number;
+}
+
 export interface Agent {
   id: string;
   full_name: string;
@@ -47,6 +53,7 @@ export interface Agent {
   min_rest_hours: number;
   shift_preference: string;
   skills: AgentSkill[];
+  availability?: TimeWindow[];
 }
 
 export interface DemandRow {

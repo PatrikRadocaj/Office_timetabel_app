@@ -3,6 +3,66 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Task ID: FEAT-004 (review)
+- Timestamp: 2026-07-08
+- Current state: Review complete. Verdict: CHANGES REQUESTED — the React implementation itself is solid (no frontend changes needed), but the feature's documented contract does not match runtime scheduler behavior, and that mismatch silently mis-schedules availability-restricted agents in every non-UTC office. One backend function needs fixing (or the contract needs re-documenting) before availability windows can be trusted.
+- Completed: Reviewed the AdminPage/types diffs, backend `TimeWindow` model, `SchedulerService._agent_is_available`, `AgentService.update` interplay, and docs. Ran React build and backend tests. No Firestore operations run.
+- Findings (ordered by severity):
+  1. High — Office-local contract vs UTC scheduler matching. The UI, USER_MANUAL, and decision D-20260708-008 all state availability windows are OFFICE-LOCAL, but `SchedulerService._agent_is_available` evaluates `slot_start.weekday()` and `slot_start.hour` on the UTC-normalized slot datetime. Demand slots are built office-local and stored UTC, so for Munich in July (UTC+2): a local 09:00 slot arrives as hour 7, meaning an agent with window Mon 9-17 is REJECTED for local 09:00-11:00 slots and ACCEPTED for local 17:00-19:00 slots — the window effectively shifts by the UTC offset. Slots near midnight also land on the WRONG WEEKDAY (local Mon 00:00-02:00 = UTC Sun 22:00-24:00 -> matched against Sunday windows). D-20260708-008's rationale ("matches the backend scheduler's weekday handling") is factually wrong for hours. Before FEAT-004 this was dormant (the UI always sent `availability: []`, so every agent was always-available); the new UI arms it. All five seeded offices are European timezones, so every restricted agent would be mis-scheduled. Fix direction (preferred): convert the slot to the agent's OFFICE timezone inside the eligibility check — `generate()` already holds the offices dict, and the demand row carries `office_id`; pass office tz into `_rank_eligible_agents`/`_agent_is_available` and match on the localized weekday/hours. Alternative (not recommended): re-document windows as UTC. Note the same UTC-hour basis also affects `_shift_preference_penalty` (day = 7-19 UTC) — pre-existing, include in the same fix or backlog it.
+  2. Low (pre-existing, now user-triggerable) — Midnight-ending slot leaks into any window. `slot_end_hour = slot_end.hour + minute/60` yields 0.0 for a slot ending exactly at 00:00, and `0.0 <= end_hour` is true for EVERY window, so containment collapses to the start check alone: window Mon 0-8 wrongly matches a Mon 23:30-00:00 slot. Fix: compute `slot_end_hour = slot_start_hour + (slot_end - slot_start).total_seconds() / 3600` (or treat hour 0 at slot end as 24).
+  3. Low — Backend `TimeWindow` has no validation at all: `day_of_week`/`start_hour`/`end_hour` are plain ints with no bounds and no start<end check. The React UI validates (day 0-6, start 0-23, end 1-24, start<end), but direct API calls can store `day_of_week: 99` or `start_hour: 25`, which never match and silently make an agent unschedulable. Add pydantic constraints mirroring the UI plus a model validator for start<end.
+  4. Info — Duplicate or overlapping windows are accepted (no dedup); harmless under OR-matching semantics, note only.
+  5. Info (positive) — The FEAT-003 wipe concern is resolved correctly: `startAgentEdit` normalizes `agent.availability` (undefined -> []), and the PUT always includes the full current list, so editing an agent without touching availability preserves windows, and deleting all windows persists `[]` (a non-None value survives `AgentService.update`'s `exclude_none=True`).
+- Review-goal confirmations:
+  1. Type shape matches: React `TimeWindow {day_of_week, start_hour, end_hour}` mirrors the backend model field-for-field; backend fields are `int`, so the UI's whole-hour rule matches exactly (fractional hours are impossible on both sides).
+  2. Scheduler contract alignment: MISALIGNED — see finding 1; the scheduler matches in UTC, the docs promise office-local.
+  3. Weekday mapping consistent: UI Monday=0..Sunday=6 equals Python `datetime.weekday()`; the dropdown renders "0 - Monday" and badges render "Mon 09:00-17:00" — numbering is exposed and correct.
+  4. Availability preserved on edit: confirmed (finding 5).
+  5. Create/edit flows: add/remove/update windows work symmetrically in both forms via a shared `AvailabilityEditor`; empty list renders "Always" in the table and an explanatory empty-state in the editor; client validation is stricter than the backend (which is finding 3, not a UI defect).
+  6. 401/preserveAlert patterns intact: the new validation throws inside the existing try blocks, so errors route through `handleApiError`; no changes to the auth/refresh wiring.
+  7. Docs/task log accuracy: files-touched matches `git diff`; PROJECT_DOCS has the FEAT-004 row and D-20260708-008; USER_MANUAL documents the workflow. Caveat: D-20260708-008's rationale and the "office-local" wording are inaccurate until finding 1 is fixed — after the scheduler fix they become true as written.
+  8. Table structure: new Availability column added; edit-row cell count and `colSpan={8}` both updated correctly.
+- Commands/tests run:
+  - `npm run build` (react-app) -> passed (pre-existing chunk-size warning only)
+  - `python -m pytest backend/tests` -> 9 passed
+  - No Firestore operations (quota constraint respected)
+- Docs in sync: Yes with the UI behavior; No with the scheduler runtime (finding 1) — D-20260708-008 should be annotated or the scheduler fixed to make it true.
+- Recommended next step: Codex fixes finding 1 (office-tz conversion in `_agent_is_available`, with a unit test using a non-UTC office) and ideally finding 2 in the same pass; backlog finding 3 (TimeWindow validation) or fix it alongside; then commit FEAT-004 + scheduler fix as scoped commits. Post-quota smoke: generate a schedule for a Munich office with a 9-17 windowed agent and verify assignments land 09:00-17:00 LOCAL.
+
+## Status Update
+- Agent: Codex
+- Task ID: FEAT-004 agent availability management
+- Timestamp: 2026-07-08 21:37:50 +02:00
+- Current state: Complete; automated verification and live UI smoke passed.
+- Completed:
+  - Added React `TimeWindow` typing and wired `Agent.availability` through create/edit flows.
+  - Added an agent availability editor to AdminPage create and inline edit UI with add/remove windows.
+  - Added client validation for weekday range 0-6, whole-hour bounds, and `start_hour < end_hour`.
+  - Displayed agent availability in the Agents preview table, with empty availability shown as `Always`.
+  - Documented the contract that Monday = 0, Sunday = 6, windows are office-local, and empty availability means always available.
+- Files touched:
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/types.ts`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `npm run build` from `react-app` -> passed; Vite reported the existing >500 kB chunk-size warning.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 9 passed.
+  - Manual browser smoke on `http://127.0.0.1:5173/admin` with an admin session:
+    - Created a test-only agent with Data Verification skill and Monday 09:00-17:00 availability.
+    - Verified the Agents preview displayed `Mon 09:00-17:00`.
+    - Edited the same agent to Tuesday 10:00-18:00 and saved.
+    - Reloaded the admin page and verified the row persisted with `Tue 10:00-18:00`.
+    - Cleaned up the test-only agent and verified it no longer appeared after reload.
+  - Cleanup script removed the unused temporary admin identity created during smoke setup.
+- Open issues:
+  - No open issues for this task.
+  - Existing unrelated dirty state remains: `react-app/vite.config.ts`, runtime logs/backups, and untracked seed scripts.
+- Next step: Claude can review FEAT-004, focusing on availability validation, scheduler contract alignment, and mobile usability.
+
+## Status Update
 - Agent: Codex
 - Task ID: DATA-003 review closeout
 - Timestamp: 2026-07-08 21:20:46 +02:00

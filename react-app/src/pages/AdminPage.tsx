@@ -21,6 +21,7 @@ import type {
   Office,
   ScheduleGenerationResponse,
   Skill,
+  TimeWindow,
   UserProfile,
 } from "../types";
 
@@ -68,9 +69,19 @@ interface EditAgentState {
   minRestHours: number;
   shiftPreference: string;
   skills: PendingSkill[];
+  availability: TimeWindow[];
 }
 
 const chartColors = ["#0d6efd", "#198754", "#dc3545", "#fd7e14", "#6f42c1", "#20c997", "#6c757d", "#0dcaf0"];
+const dayOptions = [
+  { value: 0, label: "Monday", shortLabel: "Mon" },
+  { value: 1, label: "Tuesday", shortLabel: "Tue" },
+  { value: 2, label: "Wednesday", shortLabel: "Wed" },
+  { value: 3, label: "Thursday", shortLabel: "Thu" },
+  { value: 4, label: "Friday", shortLabel: "Fri" },
+  { value: 5, label: "Saturday", shortLabel: "Sat" },
+  { value: 6, label: "Sunday", shortLabel: "Sun" },
+];
 
 const toDateTimeLocalValue = (value: Date): string => {
   const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
@@ -91,6 +102,126 @@ const defaultScheduleEnd = (): string => {
 };
 
 const formatPercent = (value: number): string => `${Math.round(Number(value || 0) * 100)}%`;
+
+const defaultAvailabilityWindow = (): TimeWindow => ({ day_of_week: 0, start_hour: 9, end_hour: 17 });
+
+const normalizeAvailability = (windows: TimeWindow[] | null | undefined): TimeWindow[] =>
+  (windows || []).map((window) => ({
+    day_of_week: Number(window.day_of_week),
+    start_hour: Number(window.start_hour),
+    end_hour: Number(window.end_hour),
+  }));
+
+const validateAvailability = (windows: TimeWindow[]): TimeWindow[] =>
+  windows.map((window, index) => {
+    const rowLabel = `Availability row ${index + 1}`;
+    const day = Number(window.day_of_week);
+    const start = Number(window.start_hour);
+    const end = Number(window.end_hour);
+
+    if (!Number.isInteger(day) || day < 0 || day > 6) {
+      throw new Error(`${rowLabel}: day must be Monday through Sunday.`);
+    }
+    if (!Number.isInteger(start) || start < 0 || start > 23) {
+      throw new Error(`${rowLabel}: start hour must be an integer from 0 to 23.`);
+    }
+    if (!Number.isInteger(end) || end < 1 || end > 24) {
+      throw new Error(`${rowLabel}: end hour must be an integer from 1 to 24.`);
+    }
+    if (start >= end) {
+      throw new Error(`${rowLabel}: start hour must be before end hour.`);
+    }
+
+    return { day_of_week: day, start_hour: start, end_hour: end };
+  });
+
+const formatHour = (hour: number): string => `${String(Number(hour)).padStart(2, "0")}:00`;
+
+const formatAvailabilityLabel = (window: TimeWindow): string => {
+  const day = dayOptions.find((option) => option.value === Number(window.day_of_week));
+  return `${day?.shortLabel || `Day ${window.day_of_week}`} ${formatHour(window.start_hour)}-${formatHour(window.end_hour)}`;
+};
+
+interface AvailabilityEditorProps {
+  windows: TimeWindow[];
+  onAdd: () => void;
+  onUpdate: (index: number, patch: Partial<TimeWindow>) => void;
+  onRemove: (index: number) => void;
+  compact?: boolean;
+}
+
+function AvailabilityEditor({ windows, onAdd, onUpdate, onRemove, compact = false }: AvailabilityEditorProps) {
+  const controlClass = compact ? "form-control form-control-sm" : "form-control";
+  const selectClass = compact ? "form-select form-select-sm" : "form-select";
+
+  return (
+    <div className="border rounded p-3">
+      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-3">
+        <div>
+          <div className="small fw-semibold">Availability</div>
+          <div className="small ccs-muted">Office-local windows. Monday is 0, Sunday is 6. Leave empty for always available.</div>
+        </div>
+        <button className="btn btn-sm btn-outline-primary" type="button" onClick={onAdd}>
+          Add Window
+        </button>
+      </div>
+
+      {windows.length ? (
+        <div className="d-flex flex-column gap-2">
+          {windows.map((window, index) => (
+            <div className="row g-2 align-items-end" key={`availability-${index}`}>
+              <div className="col-12 col-md-4">
+                <label className="form-label">Day</label>
+                <select
+                  className={selectClass}
+                  value={window.day_of_week}
+                  onChange={(event) => onUpdate(index, { day_of_week: Number(event.target.value) })}
+                >
+                  {dayOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.value} - {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-6 col-md-3">
+                <label className="form-label">Start hour</label>
+                <input
+                  className={controlClass}
+                  type="number"
+                  min={0}
+                  max={23}
+                  step={1}
+                  value={window.start_hour}
+                  onChange={(event) => onUpdate(index, { start_hour: Number(event.target.value) })}
+                />
+              </div>
+              <div className="col-6 col-md-3">
+                <label className="form-label">End hour</label>
+                <input
+                  className={controlClass}
+                  type="number"
+                  min={1}
+                  max={24}
+                  step={1}
+                  value={window.end_hour}
+                  onChange={(event) => onUpdate(index, { end_hour: Number(event.target.value) })}
+                />
+              </div>
+              <div className="col-12 col-md-2 d-grid">
+                <button className="btn btn-outline-danger btn-sm" type="button" onClick={() => onRemove(index)}>
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="ccs-muted mb-0">No availability windows set. Scheduler treats this agent as always available.</p>
+      )}
+    </div>
+  );
+}
 
 export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const navigate = useNavigate();
@@ -123,6 +254,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [agentWeeklyHours, setAgentWeeklyHours] = useState(40);
   const [agentMinRest, setAgentMinRest] = useState(10);
   const [agentShiftPref, setAgentShiftPref] = useState("any");
+  const [agentAvailability, setAgentAvailability] = useState<TimeWindow[]>([]);
 
   const [demandOfficeId, setDemandOfficeId] = useState("");
   const [demandDate, setDemandDate] = useState(todayIsoDate());
@@ -407,6 +539,18 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     ]);
   };
 
+  const addAgentAvailabilityWindow = () => {
+    setAgentAvailability((current) => [...current, defaultAvailabilityWindow()]);
+  };
+
+  const updateAgentAvailabilityWindow = (index: number, patch: Partial<TimeWindow>) => {
+    setAgentAvailability((current) => current.map((window, rowIndex) => (rowIndex === index ? { ...window, ...patch } : window)));
+  };
+
+  const removeAgentAvailabilityWindow = (index: number) => {
+    setAgentAvailability((current) => current.filter((_, rowIndex) => rowIndex !== index));
+  };
+
   const submitOffice = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     clearAdminAlert();
@@ -483,6 +627,8 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
         throw new Error("Add at least one skill for the agent");
       }
 
+      const availability = validateAvailability(agentAvailability);
+
       await apiRequest("/agents", {
         method: "POST",
         body: {
@@ -493,7 +639,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
           min_rest_hours: Number(agentMinRest),
           shift_preference: agentShiftPref,
           skills: pendingSkills.map((item) => ({ skill_id: item.skill_id, proficiency: item.proficiency })),
-          availability: [],
+          availability,
         },
       });
 
@@ -503,6 +649,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setAgentMinRest(10);
       setAgentShiftPref("any");
       setPendingSkills([]);
+      setAgentAvailability([]);
       setAlert({ type: "success", message: "Agent created successfully." });
       await Promise.all([reloadAgents(), loadAdminSummary()]);
     } catch (error) {
@@ -647,6 +794,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
         skill_name: skillNameById[skill.skill_id] || skill.skill_id,
         proficiency: skill.proficiency,
       })),
+      availability: normalizeAvailability(agent.availability),
     });
     setEditAgentSkillId("");
     setEditAgentSkillProficiency(3);
@@ -709,6 +857,39 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     );
   };
 
+  const addEditAgentAvailabilityWindow = () => {
+    setEditingAgent((current) =>
+      current
+        ? {
+            ...current,
+            availability: [...current.availability, defaultAvailabilityWindow()],
+          }
+        : current,
+    );
+  };
+
+  const updateEditAgentAvailabilityWindow = (index: number, patch: Partial<TimeWindow>) => {
+    setEditingAgent((current) =>
+      current
+        ? {
+            ...current,
+            availability: current.availability.map((window, rowIndex) => (rowIndex === index ? { ...window, ...patch } : window)),
+          }
+        : current,
+    );
+  };
+
+  const removeEditAgentAvailabilityWindow = (index: number) => {
+    setEditingAgent((current) =>
+      current
+        ? {
+            ...current,
+            availability: current.availability.filter((_, rowIndex) => rowIndex !== index),
+          }
+        : current,
+    );
+  };
+
   const updateAgent = async () => {
     if (!editingAgent) {
       return;
@@ -730,6 +911,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
           throw new Error(`${skill.skill_name} proficiency must be between 1 and 5`);
         }
       }
+      const availability = validateAvailability(editingAgent.availability);
 
       await apiRequest<Agent>(`/agents/${editingAgent.id}`, {
         method: "PUT",
@@ -743,6 +925,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
             skill_id: skill.skill_id,
             proficiency: Number(skill.proficiency),
           })),
+          availability,
         },
       });
 
@@ -1401,6 +1584,14 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                     </ul>
                   </div>
                   <div className="col-12">
+                    <AvailabilityEditor
+                      windows={agentAvailability}
+                      onAdd={addAgentAvailabilityWindow}
+                      onUpdate={updateAgentAvailabilityWindow}
+                      onRemove={removeAgentAvailabilityWindow}
+                    />
+                  </div>
+                  <div className="col-12">
                     <button className="btn btn-warning" type="submit">
                       Add Agent
                     </button>
@@ -1801,6 +1992,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                               <th>Hours</th>
                               <th>Skills & Levels</th>
                               <th>Pref.</th>
+                              <th>Availability</th>
                               <th>Actions</th>
                             </tr>
                           </thead>
@@ -1866,6 +2058,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                                         <option value="night">Night</option>
                                       </select>
                                     </td>
+                                    <td className="ccs-muted">Edit below</td>
                                     <td>
                                       <div className="d-flex gap-2">
                                         <button className="btn btn-sm btn-primary" type="button" onClick={() => void updateAgent()}>
@@ -1878,7 +2071,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                                     </td>
                                   </tr>
                                   <tr>
-                                    <td colSpan={7}>
+                                    <td colSpan={8}>
                                       <div className="row g-2 align-items-end">
                                         <div className="col-12">
                                           <div className="small fw-semibold">Agent skills</div>
@@ -1945,6 +2138,15 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                                             Add Skill
                                           </button>
                                         </div>
+                                        <div className="col-12 mt-3">
+                                          <AvailabilityEditor
+                                            windows={editingAgent.availability}
+                                            onAdd={addEditAgentAvailabilityWindow}
+                                            onUpdate={updateEditAgentAvailabilityWindow}
+                                            onRemove={removeEditAgentAvailabilityWindow}
+                                            compact
+                                          />
+                                        </div>
                                       </div>
                                     </td>
                                   </tr>
@@ -1967,6 +2169,19 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                                     )}
                                   </td>
                                   <td>{agent.shift_preference}</td>
+                                  <td style={{ minWidth: 190 }}>
+                                    {agent.availability?.length ? (
+                                      <div className="d-flex flex-wrap gap-1">
+                                        {agent.availability.map((window, index) => (
+                                          <span key={`${agent.id}-availability-${index}`} className="badge text-bg-light border">
+                                            {formatAvailabilityLabel(window)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span className="ccs-muted">Always</span>
+                                    )}
+                                  </td>
                                   <td>
                                     <div className="d-flex gap-2">
                                       <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => startAgentEdit(agent)}>

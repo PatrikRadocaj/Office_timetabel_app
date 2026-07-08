@@ -90,6 +90,7 @@ C:\Users\User\Desktop\web projekt\
 | ARCH-002 | Remove legacy vanilla frontend wiring | Done | Codex | Backend now serves React build when present; Vite is dev UI |
 | FEAT-002 | Expose admin summary and schedule generation in React | Done | Codex | Admin page now loads dashboard summary, generates schedules, and displays assignment coverage results |
 | FEAT-003 | Add edit/delete UI for admin catalog data | Done | Codex | Admin data preview now supports inline edit and confirmed delete for offices, skills, and agents |
+| FEAT-004 | Add agent availability management in React | Done | Codex | Admin agent create/edit now sends and displays office-local weekday/hour availability windows |
 | DATA-003 | Compact demand forecast storage | Done | Codex | Daily demand saves now write one Firestore document per office/date/interval and expand to slots only in memory |
 | DATA-004 | Migrate legacy demand slot documents to compact storage | Done | Codex | Legacy per-slot demand documents were backed up, compacted into 35 daily documents, and deleted from Firestore |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
@@ -106,6 +107,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260708-005 | 2026-07-08 | Accepted | FastAPI remains the API server and may serve the built React app from `react-app/dist`. | This supports Vite development and a single-server production-style run. | Codex |
 | D-20260708-006 | 2026-07-08 | Accepted | Admin users are also allowed to use the normal personal dashboard and should land on `/dashboard` after login. | Admins may also be employees; `/admin` remains protected and reachable from the dashboard. | User |
 | D-20260708-007 | 2026-07-08 | Accepted | Store demand forecasts as compact daily documents instead of one Firestore document per non-zero slot/skill. | This sharply reduces Firestore document count, read/write volume, and quota pressure while preserving slot-level scheduler behavior in memory. | User |
+| D-20260708-008 | 2026-07-08 | Accepted | Agent availability windows use office-local whole hours with Monday = 0 through Sunday = 6; an empty availability list means always available. | This matches the backend scheduler's weekday handling and preserves existing unrestricted-agent behavior. | Codex |
 
 ## Known Issues And Risks
 
