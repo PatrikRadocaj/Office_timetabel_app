@@ -227,6 +227,7 @@ Note: the schedule generation start/end controls use the admin browser's local t
 | FastAPI root returns React build missing | React build does not exist | Use `npm run dev` for development or run `npm run build` before opening port 8000 |
 | FastAPI serves HTML but built assets return 404 | Backend started before `npm run build`; `/assets` is mounted only at startup | Run `npm run build`, then restart the backend |
 | Firebase errors | Missing or invalid `.env`/service account | Check Firebase project ID, API key, and service account path |
+| Cloud Firestore quota is exceeded | Firestore rejected reads/writes for the configured project | Wait for quota reset, reduce repeated admin/API refreshes, or increase the Firebase/Google Cloud quota |
 | Login fails for seeded users | Seeded `users` docs are profiles only | Create matching Firebase Auth users or register through the app |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |
 | Port 8000 already in use | Another local server is running | Stop the old process or run Uvicorn on another port |

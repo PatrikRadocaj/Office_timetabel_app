@@ -42,7 +42,12 @@ class FirestoreRepository:
         message = str(exc)
         lowered = message.lower()
 
-        if "service_disabled" in lowered or "firestore.googleapis.com" in lowered and "disabled" in lowered:
+        if "quota exceeded" in lowered or isinstance(exc, google_api_exceptions.ResourceExhausted):
+            detail = (
+                "Cloud Firestore quota is exceeded for the configured project. "
+                "Wait for quota reset, reduce Firestore usage, or increase the project quota."
+            )
+        elif "service_disabled" in lowered or "firestore.googleapis.com" in lowered and "disabled" in lowered:
             detail = (
                 "Cloud Firestore API is disabled for the configured project. "
                 "Enable firestore.googleapis.com in Google Cloud and retry."
