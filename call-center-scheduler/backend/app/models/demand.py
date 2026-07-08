@@ -91,6 +91,8 @@ class DailyDemandForecastWriteResponse(BaseModel):
     created_count: int
     deleted_count: int
     forecast_batch_id: str
+    document_count: int = 1
+    represented_slot_count: int = 0
 
 
 class DayDemandBlockRead(BaseModel):

@@ -203,6 +203,10 @@ Admins can open the admin area from the dashboard using the Admin Panel button, 
 3. Add demand manually or upload a CSV file.
 4. Verify the demand table updates.
 
+Demand forecasts are stored compactly: one Firestore document per office/date/interval can represent a full day of skill demand. The API still shows slot-level rows in the UI and scheduler by expanding that document in memory.
+
+When a daily demand save uses `replace_existing_day=false`, the backend writes an additional suffixed compact document. Those saved documents stack additively for the same office/date/interval.
+
 ### Generate A Schedule
 
 1. Ensure offices, skills, agents, and demand forecasts exist.

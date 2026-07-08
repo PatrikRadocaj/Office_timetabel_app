@@ -12,10 +12,10 @@ from app.core.config import get_settings
 from app.models.schedule import ScheduleGenerationRequest
 from app.models.common import utcnow
 from app.repositories.agents_repository import AgentsRepository
-from app.repositories.demand_repository import DemandForecastsRepository
 from app.repositories.offices_repository import OfficesRepository
 from app.repositories.schedules_repository import SchedulesRepository
 from app.repositories.skills_repository import SkillsRepository
+from app.services.catalog_service import DemandService
 
 
 def _as_utc(value: datetime | str) -> datetime:
@@ -34,7 +34,7 @@ class SchedulerService:
 
     def __init__(self):
         self.settings = get_settings()
-        self.demand_repo = DemandForecastsRepository()
+        self.demand_service = DemandService()
         self.agent_repo = AgentsRepository()
         self.office_repo = OfficesRepository()
         self.skill_repo = SkillsRepository()
@@ -158,20 +158,13 @@ class SchedulerService:
         }
 
     def _load_demand(self, start_at: datetime, end_at: datetime) -> list[dict[str, Any]]:
-        rows = self.demand_repo.list(order_by="slot_start")
-        start_utc = _as_utc(start_at)
-        end_utc = _as_utc(end_at)
-        return [
-            row
-            for row in rows
-            if start_utc <= _as_utc(row["slot_start"]) < end_utc
-        ]
+        return self.demand_service.list(start_at=start_at, end_at=end_at)
 
     @staticmethod
     def _group_demand_by_slot_and_skill(rows: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
         grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
-            key = (str(row["slot_start"]), str(row["slot_end"]))
+            key = (_as_utc(row["slot_start"]).isoformat(), _as_utc(row["slot_end"]).isoformat())
             grouped[key].append(row)
         return grouped
 

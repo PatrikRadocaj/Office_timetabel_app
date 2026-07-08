@@ -23,6 +23,7 @@ Current accepted architecture:
 - Development frontend serving: Vite dev server on `http://localhost:5173`, proxying `/api` to FastAPI
 - Production-style frontend serving: FastAPI can serve the compiled React build from `react-app/dist`
 - Scheduling: backend heuristic scheduler service
+- Demand storage: compact daily Firestore documents under `demand_forecasts`, expanded to slot rows in memory for API compatibility, graphing, and scheduling
 - QA: documented manual/API regression protocol in `call-center-scheduler/TEST_PROTOCOL.md`
 
 Deprecated architecture:
@@ -89,6 +90,8 @@ C:\Users\User\Desktop\web projekt\
 | ARCH-002 | Remove legacy vanilla frontend wiring | Done | Codex | Backend now serves React build when present; Vite is dev UI |
 | FEAT-002 | Expose admin summary and schedule generation in React | Done | Codex | Admin page now loads dashboard summary, generates schedules, and displays assignment coverage results |
 | FEAT-003 | Add edit/delete UI for admin catalog data | Done | Codex | Admin data preview now supports inline edit and confirmed delete for offices, skills, and agents |
+| DATA-003 | Compact demand forecast storage | Done | Codex | Daily demand saves now write one Firestore document per office/date/interval and expand to slots only in memory |
+| DATA-004 | Migrate legacy demand slot documents to compact storage | Done | Codex | Legacy per-slot demand documents were backed up, compacted into 35 daily documents, and deleted from Firestore |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
 | DEV-001 | Audit current dirty worktree before development | Proposed | Codex/Claude | Local modified files and runtime logs exist as of 2026-07-08 |
 
@@ -102,6 +105,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260708-004 | 2026-07-08 | Accepted | Use only the React/Vite frontend and remove the old vanilla frontend. | The user explicitly chose the React frontend as the single UI path. | User |
 | D-20260708-005 | 2026-07-08 | Accepted | FastAPI remains the API server and may serve the built React app from `react-app/dist`. | This supports Vite development and a single-server production-style run. | Codex |
 | D-20260708-006 | 2026-07-08 | Accepted | Admin users are also allowed to use the normal personal dashboard and should land on `/dashboard` after login. | Admins may also be employees; `/admin` remains protected and reachable from the dashboard. | User |
+| D-20260708-007 | 2026-07-08 | Accepted | Store demand forecasts as compact daily documents instead of one Firestore document per non-zero slot/skill. | This sharply reduces Firestore document count, read/write volume, and quota pressure while preserving slot-level scheduler behavior in memory. | User |
 
 ## Known Issues And Risks
 
@@ -114,6 +118,7 @@ C:\Users\User\Desktop\web projekt\
 | RISK-005 | QA freshness | Existing QA reports are from 2026-05-09. | Medium | Open | Run a fresh baseline after protocol approval and before major development. |
 | RISK-006 | Routing | FastAPI currently serves React only for `/`, `/dashboard`, and `/admin`. | Low | Open | Add an SPA catch-all when new React routes are introduced so direct navigation does not 404. |
 | RISK-007 | Role UX | Admins have both employee-dashboard and admin-panel access. | Low | Monitoring | Keep `/admin` protected; do not reintroduce automatic redirects away from `/dashboard`. |
+| RISK-008 | Firebase | Firestore quota for project `scheduler-app-54991` can be exhausted during repeated admin/API smoke testing. | Medium | Monitoring | Compact demand storage reduces future pressure; legacy slot documents were migrated/deleted on 2026-07-08. |
 
 ## Next Steps / Backlog
 
@@ -133,8 +138,12 @@ C:\Users\User\Desktop\web projekt\
 14. Add referential-integrity guards for office and skill deletes, returning `409` with reference counts or documenting an intentional cascade policy.
 15. Enforce office and skill name uniqueness on update, matching the create-path `409`; also apply the weekly max-hours hard-limit check in agent update.
 16. Validate office timezone values as real IANA zones on create/update, or replace free-text timezone entry with a timezone select in the UI.
-17. Update the task board with the first approved development task.
-18. Keep the user manual current as features stabilize.
+17. Document compact-storage contract changes for single-slot, bulk, and CSV demand endpoints: only 30/60-minute slots, priority is per skill-day, and same-slot re-posts replace quantity instead of accumulating; decide whether the CSV template needs a note.
+18. Harden compact demand expansion so malformed documents missing `forecast_date` or `interval_minutes` are skipped with a log entry instead of raising a 500.
+19. Keep demand manual copy clear that `replace_existing_day=false` writes suffixed documents and stacks demand additively.
+20. Refactor compact demand seed/migration scripts to reuse `DemandService._daily_document_payload` and avoid schema drift.
+21. Update the task board with the first approved development task.
+22. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 

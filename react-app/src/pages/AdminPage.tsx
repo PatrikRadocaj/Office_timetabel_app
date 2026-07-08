@@ -878,6 +878,8 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
         message: string;
         created_count: number;
         deleted_count: number;
+        document_count?: number;
+        represented_slot_count?: number;
       }>("/demand-forecasts/daily", {
         method: "POST",
         body: {
@@ -891,7 +893,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
       setAlert({
         type: "success",
-        message: `${result.message}. Created: ${result.created_count}, Replaced: ${result.deleted_count}.`,
+        message: `${result.message}. Firestore documents written: ${result.document_count ?? 1}, Replaced: ${result.deleted_count}.`,
       });
 
       await Promise.all([reloadDemand(), loadChart()]);

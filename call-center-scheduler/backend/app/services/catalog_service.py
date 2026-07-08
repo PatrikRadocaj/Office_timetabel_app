@@ -156,6 +156,8 @@ class AgentService:
 
 
 class DemandService:
+    DAILY_STORAGE_MODEL = "daily_document_v1"
+
     def __init__(self):
         self.repo = DemandForecastsRepository()
         self.office_repo = OfficesRepository()
@@ -163,20 +165,72 @@ class DemandService:
         self.schedule_repo = SchedulesRepository()
 
     def create(self, payload: DemandForecastCreate) -> dict[str, Any]:
-        self._validate_references(payload.office_id, payload.skill_id)
         data = payload.model_dump()
-        data["slot_start"] = _ensure_aware_utc(data["slot_start"])
-        data["slot_end"] = _ensure_aware_utc(data["slot_end"])
-        if data["slot_end"] <= data["slot_start"]:
+        slot_start = _ensure_aware_utc(data["slot_start"])
+        slot_end = _ensure_aware_utc(data["slot_end"])
+        if slot_end <= slot_start:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="slot_end must be after slot_start")
-        return self.repo.create(data)
+
+        interval_minutes = int((slot_end - slot_start).total_seconds() // 60)
+        if interval_minutes not in {30, 60}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="slot duration must be 30 or 60 minutes")
+
+        office = self._validate_references(payload.office_id, payload.skill_id)
+        office_tz = self._resolve_office_timezone(office)
+        slot_start_local = slot_start.astimezone(office_tz)
+        minute_of_day = slot_start_local.hour * 60 + slot_start_local.minute
+        if slot_start_local.second or slot_start_local.microsecond or minute_of_day % interval_minutes != 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="slot_start must align to the interval")
+
+        slot_index = minute_of_day // interval_minutes
+        slot_count = (24 * 60) // interval_minutes
+        forecast_date = slot_start_local.date().isoformat()
+        doc_id = self._daily_document_id(payload.office_id, forecast_date, interval_minutes)
+        existing_doc = self.repo.get(doc_id)
+        skill_demands = self._normalize_skill_demands(existing_doc.get("skill_demands", []) if existing_doc else [], slot_count)
+
+        skill_entry = next((entry for entry in skill_demands if entry["skill_id"] == payload.skill_id), None)
+        if skill_entry is None:
+            skill_entry = {
+                "skill_id": payload.skill_id,
+                "priority": int(payload.priority),
+                "quantities": [0] * slot_count,
+            }
+            skill_demands.append(skill_entry)
+
+        skill_entry["priority"] = int(payload.priority)
+        skill_entry["quantities"][slot_index] = int(payload.required_agents)
+
+        forecast_batch_id = str(
+            existing_doc.get("forecast_batch_id")
+            if existing_doc
+            else f"daily_{payload.office_id}_{forecast_date}_{interval_minutes}_{uuid4().hex[:8]}"
+        )
+        saved_doc = self._upsert_daily_document(
+            doc_id,
+            {
+                "office_id": payload.office_id,
+                "forecast_date": forecast_date,
+                "interval_minutes": interval_minutes,
+                "entry_mode": "daily_grid",
+                "storage_model": self.DAILY_STORAGE_MODEL,
+                "forecast_batch_id": forecast_batch_id,
+                "skill_demands": sorted(skill_demands, key=lambda entry: entry["skill_id"]),
+            },
+        )
+        rows = self._expand_compact_daily_document(saved_doc, {payload.office_id: office})
+        for row in rows:
+            if row["skill_id"] == payload.skill_id and row["time_block"] == slot_start_local.strftime("%H:%M"):
+                return row
+
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save demand row")
 
     def create_bulk(self, payload: DemandForecastBulkCreate) -> dict[str, Any]:
         created_ids: list[str] = []
         for item in payload.items:
             created = self.create(item)
             created_ids.append(created["id"])
-        return {"message": f"Created {len(created_ids)} demand rows", "ids": created_ids}
+        return {"message": f"Saved {len(created_ids)} demand rows into compact daily documents", "ids": created_ids}
 
     def create_daily(self, payload: DailyDemandForecastCreate) -> dict[str, Any]:
         office = self.office_repo.get(payload.office_id)
@@ -192,9 +246,6 @@ class DemandService:
 
         forecast_date = payload.date.isoformat()
         interval = payload.interval_minutes
-        office_tz = self._resolve_office_timezone(office)
-        day_start_local = datetime.combine(payload.date, time.min, tzinfo=office_tz)
-        slot_count = (24 * 60) // interval
         forecast_batch_id = f"daily_{payload.office_id}_{forecast_date}_{interval}_{uuid4().hex[:8]}"
 
         deleted_count = 0
@@ -209,43 +260,30 @@ class DemandService:
                 if self.repo.delete(row["id"]):
                     deleted_count += 1
 
-        created_count = 0
-        for slot_index in range(slot_count):
-            slot_start_local = day_start_local + timedelta(minutes=slot_index * interval)
-            slot_end_local = slot_start_local + timedelta(minutes=interval)
-            slot_start = slot_start_local.astimezone(timezone.utc)
-            slot_end = slot_end_local.astimezone(timezone.utc)
-            time_block = slot_start_local.strftime("%H:%M")
-
-            for skill_demand in payload.skill_demands:
-                quantity = int(skill_demand.quantities[slot_index])
-                if quantity <= 0:
-                    continue
-
-                row = {
-                    "office_id": payload.office_id,
-                    "skill_id": skill_demand.skill_id,
-                    "slot_start": slot_start,
-                    "slot_end": slot_end,
-                    "required_agents": quantity,
-                    "priority": int(skill_demand.priority),
-                    "forecast_date": forecast_date,
-                    "interval_minutes": interval,
-                    "time_block": time_block,
-                    "entry_mode": "daily_grid",
-                    "forecast_batch_id": forecast_batch_id,
-                }
-                self.repo.create(row)
-                created_count += 1
+        created_count = self._represented_slot_count(payload.skill_demands)
+        doc_id = (
+            self._daily_document_id(payload.office_id, forecast_date, interval)
+            if payload.replace_existing_day
+            else f"{self._daily_document_id(payload.office_id, forecast_date, interval)}_{uuid4().hex[:8]}"
+        )
+        self.repo.create(
+            self._daily_document_payload(payload, forecast_batch_id),
+            document_id=doc_id,
+        )
 
         return {
-            "message": f"Created {created_count} demand rows from daily demand grid",
+            "message": (
+                "Saved daily demand as 1 Firestore document "
+                f"representing {created_count} demand slots"
+            ),
             "office_id": payload.office_id,
             "date": forecast_date,
             "interval_minutes": interval,
             "created_count": created_count,
             "deleted_count": deleted_count,
             "forecast_batch_id": forecast_batch_id,
+            "document_count": 1,
+            "represented_slot_count": created_count,
         }
 
     async def ingest_csv(self, file: UploadFile) -> dict[str, Any]:
@@ -286,12 +324,10 @@ class DemandService:
             self.create(payload)
             created_count += 1
 
-        return {"message": f"Successfully imported {created_count} demand rows"}
+        return {"message": f"Successfully imported {created_count} demand rows into compact daily documents"}
 
     def list(self, start_at: datetime | None = None, end_at: datetime | None = None) -> list[dict[str, Any]]:
-        rows = self.repo.list(order_by="slot_start")
-        if start_at is None and end_at is None:
-            return rows
+        rows = self._expand_documents(self.repo.list())
 
         start_at_utc = _ensure_aware_utc(start_at) if start_at else None
         end_at_utc = _ensure_aware_utc(end_at) if end_at else None
@@ -304,7 +340,7 @@ class DemandService:
             if end_at_utc and slot_start >= end_at_utc:
                 continue
             filtered.append(row)
-        return filtered
+        return sorted(filtered, key=lambda row: _ensure_aware_utc(row["slot_start"]))
 
     def day_view(self, office_id: str, forecast_date: date, interval_minutes: int) -> dict[str, Any]:
         if interval_minutes not in {30, 60}:
@@ -314,8 +350,9 @@ class DemandService:
         if office is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid office_id")
 
-        rows = self.repo.list(filters=[("office_id", "==", office_id)])
         target_date = forecast_date.isoformat()
+        office_cache = {office_id: office}
+        rows = self._expand_documents(self.repo.list(filters=[("office_id", "==", office_id)]), office_cache)
         day_rows = [
             row
             for row in rows
@@ -419,8 +456,135 @@ class DemandService:
         except Exception:
             return timezone.utc
 
-    def _validate_references(self, office_id: str, skill_id: str) -> None:
-        if self.office_repo.get(office_id) is None:
+    def _validate_references(self, office_id: str, skill_id: str) -> dict[str, Any]:
+        office = self.office_repo.get(office_id)
+        if office is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid office_id")
         if self.skill_repo.get(skill_id) is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill_id")
+        return office
+
+    @staticmethod
+    def _daily_document_id(office_id: str, forecast_date: str, interval_minutes: int) -> str:
+        return f"daily_{forecast_date}_{office_id}_{interval_minutes}"
+
+    def _daily_document_payload(self, payload: DailyDemandForecastCreate, forecast_batch_id: str) -> dict[str, Any]:
+        return {
+            "office_id": payload.office_id,
+            "forecast_date": payload.date.isoformat(),
+            "interval_minutes": payload.interval_minutes,
+            "entry_mode": "daily_grid",
+            "storage_model": self.DAILY_STORAGE_MODEL,
+            "forecast_batch_id": forecast_batch_id,
+            "skill_demands": [
+                {
+                    "skill_id": entry.skill_id,
+                    "priority": int(entry.priority),
+                    "quantities": [int(qty) for qty in entry.quantities],
+                }
+                for entry in sorted(payload.skill_demands, key=lambda item: item.skill_id)
+            ],
+        }
+
+    @staticmethod
+    def _represented_slot_count(skill_demands: list[Any]) -> int:
+        return sum(1 for entry in skill_demands for qty in entry.quantities if int(qty) > 0)
+
+    def _upsert_daily_document(self, document_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        existing = self.repo.get(document_id)
+        if existing:
+            updated = self.repo.update(document_id, data)
+            if updated is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demand forecast not found")
+            return updated
+        return self.repo.create(data, document_id=document_id)
+
+    @staticmethod
+    def _normalize_skill_demands(raw_entries: list[Any], slot_count: int) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for raw_entry in raw_entries:
+            entry = dict(raw_entry)
+            quantities = [int(qty) for qty in entry.get("quantities", [])[:slot_count]]
+            if len(quantities) < slot_count:
+                quantities.extend([0] * (slot_count - len(quantities)))
+            normalized.append(
+                {
+                    "skill_id": str(entry["skill_id"]),
+                    "priority": int(entry.get("priority", 3) or 3),
+                    "quantities": quantities,
+                }
+            )
+        return normalized
+
+    def _expand_documents(
+        self,
+        documents: list[dict[str, Any]],
+        office_cache: dict[str, dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        cache = office_cache if office_cache is not None else {}
+        rows: list[dict[str, Any]] = []
+        for document in documents:
+            if self._is_compact_daily_document(document):
+                rows.extend(self._expand_compact_daily_document(document, cache))
+            elif "slot_start" in document and "slot_end" in document and "skill_id" in document:
+                rows.append(document)
+        return rows
+
+    @staticmethod
+    def _is_compact_daily_document(document: dict[str, Any]) -> bool:
+        return document.get("storage_model") == DemandService.DAILY_STORAGE_MODEL or isinstance(
+            document.get("skill_demands"),
+            list,
+        )
+
+    def _expand_compact_daily_document(
+        self,
+        document: dict[str, Any],
+        office_cache: dict[str, dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        office_id = str(document["office_id"])
+        forecast_date = str(document["forecast_date"])
+        interval = int(document["interval_minutes"])
+        slot_count = (24 * 60) // interval
+        doc_id = str(document.get("id") or self._daily_document_id(office_id, forecast_date, interval))
+
+        cache = office_cache if office_cache is not None else {}
+        if office_id not in cache:
+            cache[office_id] = self.office_repo.get(office_id) or {}
+
+        office_tz = self._resolve_office_timezone(cache.get(office_id, {}))
+        day_start_local = datetime.combine(date.fromisoformat(forecast_date), time.min, tzinfo=office_tz)
+
+        rows: list[dict[str, Any]] = []
+        for skill_demand in self._normalize_skill_demands(document.get("skill_demands", []), slot_count):
+            skill_id = str(skill_demand["skill_id"])
+            priority = int(skill_demand.get("priority", 3))
+            quantities = skill_demand["quantities"]
+            for slot_index, quantity in enumerate(quantities):
+                qty = int(quantity)
+                if qty <= 0:
+                    continue
+
+                slot_start_local = day_start_local + timedelta(minutes=slot_index * interval)
+                slot_end_local = slot_start_local + timedelta(minutes=interval)
+                rows.append(
+                    {
+                        "id": f"{doc_id}_{slot_index:02d}_{skill_id}",
+                        "source_document_id": doc_id,
+                        "office_id": office_id,
+                        "skill_id": skill_id,
+                        "slot_start": slot_start_local.astimezone(timezone.utc),
+                        "slot_end": slot_end_local.astimezone(timezone.utc),
+                        "required_agents": qty,
+                        "priority": priority,
+                        "forecast_date": forecast_date,
+                        "interval_minutes": interval,
+                        "time_block": slot_start_local.strftime("%H:%M"),
+                        "entry_mode": str(document.get("entry_mode") or "daily_grid"),
+                        "storage_model": self.DAILY_STORAGE_MODEL,
+                        "forecast_batch_id": document.get("forecast_batch_id"),
+                        "created_at": document.get("created_at"),
+                        "updated_at": document.get("updated_at"),
+                    }
+                )
+        return rows
