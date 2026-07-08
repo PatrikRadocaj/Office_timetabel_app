@@ -3,6 +3,24 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Task ID: AUTH-INVALID-TOKEN-REDIRECT closeout
+- Timestamp: 2026-07-08
+- Current state: Closeout complete.
+- Completed:
+  - Committed approved AUTH-INVALID-TOKEN-REDIRECT work as `127ff2d5ab7c5070cda9ec10f200c7ec33e6d599` on branch `codex/invalid-token-redirect`.
+  - Added backlog-only follow-ups to `PROJECT_DOCS.md`:
+    - Treat `403` "User is disabled" and `404` "User profile not found" from `get_current_user` as frontend session-ending responses.
+    - Wrap `syncSession` in `useCallback` in `react-app/src/App.tsx`; optionally add an `active` cancellation guard to `AdminPage` initialization.
+- Files touched:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - Before commit: `npm run build` from `react-app` -> passed
+- Open issues: Backlog items recorded only; not implemented in this task.
+- Next step: User chooses whether to implement one of the backlog items or hand the branch off for merge.
+
+## Status Update
 - Agent: Claude
 - Task ID: AUTH-INVALID-TOKEN-REDIRECT (review)
 - Timestamp: 2026-07-08

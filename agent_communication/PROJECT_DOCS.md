@@ -123,8 +123,10 @@ C:\Users\User\Desktop\web projekt\
 6. Decide whether `GET /api/v1/dashboard/summary` should be admin-only; it currently requires only authentication, so agents can read company-wide coverage metrics.
 7. Add frontend test infrastructure, such as Vitest and React Testing Library, so routing guards like `ProtectedRoute` get automated coverage.
 8. Consider admin-specific dashboard copy for admins with no agent profile; the current generic dashboard says "You have a day off today" and shows an empty shift card.
-9. Update the task board with the first approved development task.
-10. Keep the user manual current as features stabilize.
+9. Treat `403` "User is disabled" and `404` "User profile not found" from `get_current_user` as frontend session-ending responses, like `401`, so deactivated/deleted users do not stay in a protected shell with a stale token.
+10. Harden React session callback identity by wrapping `syncSession` in `useCallback` in `react-app/src/App.tsx`; optionally add an `active` cancellation guard to `AdminPage` initialization for consistency with `DashboardPage`.
+11. Update the task board with the first approved development task.
+12. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 
