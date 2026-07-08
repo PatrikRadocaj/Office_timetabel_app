@@ -174,11 +174,15 @@ Admins can manage:
 
 ### Dashboard
 
-The dashboard shows operational metrics and coverage information. Coverage gaps should be highlighted when demand is not fully covered.
+The dashboard shows personal schedule information, hours, skills, announcements, and quick actions. Admin users also land here after login because they may also be company employees.
 
 ### Agent Area
 
 Agents should see their own dashboard data and should not have access to admin-only controls.
+
+### Admin Access
+
+Admins can open the admin area from the dashboard using the Admin Panel button, or by opening `/admin` directly. Non-admin users are redirected away from `/admin`.
 
 ## Common Workflows
 

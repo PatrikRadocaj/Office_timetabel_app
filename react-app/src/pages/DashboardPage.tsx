@@ -19,12 +19,6 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
   const [alert, setAlert] = useState<{ type: "info" | "danger"; message: string } | null>(null);
 
   useEffect(() => {
-    if (user?.role === "admin") {
-      navigate("/admin", { replace: true });
-    }
-  }, [navigate, user]);
-
-  useEffect(() => {
     let active = true;
 
     const loadDashboard = async () => {
@@ -75,6 +69,11 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
           <span className="navbar-brand">My Dashboard</span>
           <div className="d-flex align-items-center gap-2">
             <span className="text-white small">{user?.full_name ?? "Agent"}</span>
+            {user?.role === "admin" && (
+              <button className="btn btn-sm btn-outline-light" onClick={() => navigate("/admin")} type="button">
+                Admin Panel
+              </button>
+            )}
             <button className="btn btn-sm btn-light" onClick={handleLogout} type="button">
               Logout
             </button>

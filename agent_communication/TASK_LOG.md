@@ -3,6 +3,56 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Task ID: AUTH-ADMIN-DASHBOARD-DEFAULT (review)
+- Timestamp: 2026-07-08
+- Current state: Review complete. APPROVED — task meets all stated acceptance criteria; no blocking findings.
+- Completed: Reviewed AuthPage, DashboardPage, ProtectedRoute, AdminPage, App.tsx routing, me_service.py, the new backend test, and doc updates. Ran backend tests and React build.
+- Findings (ordered by severity — none blocking):
+  1. Low — Frontend role checks read `user.role` from localStorage, so a user can force the `/admin` UI shell open by editing local storage. Not exploitable: every admin API endpoint is protected server-side by `require_admin` (verified across offices/skills/agents/demand/schedules routers), so a spoofed client gets only empty tables and 403s. No action needed; noting so nobody mistakes the client guard for a security boundary.
+  2. Low — Pre-existing, not from this task: `GET /api/v1/dashboard/summary` requires only authentication, not admin, so agents can read operational coverage metrics. Flagging for a product decision in the backlog; out of scope here.
+  3. Low — Missing-test observations: `test_me_dashboard_access.py` covers the admin-payload case well, but there is no test that a non-agent/agent role distinction is enforced anywhere else, and the React app has no test infrastructure, so routing guards (ProtectedRoute redirect behavior) are verified only by inspection/build. The test also constructs `MeService` via `object.__new__` (bypassing `__init__`); it will break loudly if `dashboard()` gains a new repo dependency — acceptable, just brittle.
+  4. Info — Minor UX: an admin with no agent profile sees "You have a day off today" and a "-" shift card. Consistent with the accepted decision (D-20260708-006) that admins get a generic personal dashboard; mention in case the user wants friendlier admin-specific copy later.
+- Review-goal confirmations:
+  1. Admins no longer auto-routed to `/admin`: confirmed — AuthPage sends all users (login, register, existing session) to `/dashboard`; DashboardPage contains no role-based redirect.
+  2. Admins can still reach `/admin`: confirmed — `requireAdmin` guard passes admins; Admin Panel button renders in the dashboard navbar for `role === "admin"`; AdminPage has a Dashboard link back.
+  3. Non-admins blocked from `/admin`: confirmed at three layers — ProtectedRoute redirects to `/dashboard`, AdminPage has a belt-and-braces useEffect redirect, and all admin API endpoints enforce `require_admin` (403) server-side.
+  4. Backend dashboard behavior safe and tested: confirmed — `MeService.dashboard` degrades gracefully with no agent profile (no crash, own-profile resolution only, no cross-user exposure); covered by `test_me_dashboard_access.py`; the previously unattributed me_service.py change is now owned by decision D-20260708-006. Prior ARCH-002 review finding 1 is CLOSED.
+  5. Docs in sync: confirmed — PROJECT_DOCS has D-20260708-006 (Accepted, Owner: User) and RISK-007; USER_MANUAL Dashboard and new Admin Access sections match the implemented behavior.
+- Commands/tests run:
+  - `python -m pytest backend/tests` -> 4 passed
+  - `npm run build` (react-app) -> passed (tsc + vite)
+- Blockers: None. Task can be considered done.
+- Next step: Nothing required from Codex for this task. Optional backlog candidates: decide whether `/api/v1/dashboard/summary` should be admin-only (finding 2) and add basic frontend routing tests (finding 3).
+
+## Status Update
+- Agent: Codex
+- Task ID: AUTH-ADMIN-DASHBOARD-DEFAULT
+- Timestamp: 2026-07-08
+- Current state: Done.
+- Completed:
+  - Changed React login/register and existing-session behavior so authenticated users, including admins, land on `/dashboard` by default.
+  - Removed the dashboard page redirect that forced admins from `/dashboard` to `/admin`.
+  - Added an Admin Panel button on the dashboard for users with `admin` role, preserving access to admin functionality.
+  - Kept `/admin` protected: non-admin users are still redirected to `/dashboard`.
+  - Accepted and documented the product decision that admins may use the normal personal dashboard; this resolves the prior `me_service.py` open question.
+  - Added backend coverage proving an admin user can receive a generic personal dashboard payload.
+- Files touched:
+  - `react-app/src/pages/AuthPage.tsx`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `call-center-scheduler/backend/app/services/me_service.py`
+  - `call-center-scheduler/backend/tests/test_me_dashboard_access.py`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m pytest backend\tests` -> 4 passed
+  - `npm run build` -> passed
+  - Route audit via `Select-String` confirmed no remaining automatic admin-to-`/admin` login/session/dashboard redirect; only the intended `/admin` access guard remains.
+- Open issues: None for this task. Runtime logs and Firebase backup remain uncommitted local runtime data from earlier work.
+- Next step: Review in browser with an admin account and continue with the next approved task.
+
+## Status Update
 - Agent: Codex
 - Task ID: ARCH-002 closeout
 - Timestamp: 2026-07-08

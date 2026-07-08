@@ -7,9 +7,6 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException, status
-
-from app.models.common import UserRole
 from app.repositories.agents_repository import AgentsRepository
 from app.repositories.announcements_repository import AnnouncementsRepository
 from app.repositories.offices_repository import OfficesRepository
@@ -54,9 +51,6 @@ class MeService:
         self.announcements_repo = AnnouncementsRepository()
 
     def dashboard(self, current_user: dict[str, Any]) -> dict[str, Any]:
-        if current_user.get("role") != UserRole.AGENT.value:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agent role required")
-
         agent = self._resolve_agent_profile(current_user)
         offices = {office["id"]: office for office in self.offices_repo.list()}
         skills = {skill["id"]: skill for skill in self.skills_repo.list()}
@@ -273,4 +267,3 @@ class MeService:
                 break
 
         return announcements
-

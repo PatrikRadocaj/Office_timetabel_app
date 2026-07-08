@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import AlertBanner from "../components/AlertBanner";
 import { apiRequest } from "../lib/api";
@@ -28,10 +28,8 @@ export default function AuthPage({ token, user, onSessionChange }: AuthPageProps
   const [registerPassword, setRegisterPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const redirectRoute = useMemo(() => (user?.role === "admin" ? "/admin" : "/dashboard"), [user]);
-
   if (token && user) {
-    return <Navigate to={redirectRoute} replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -54,7 +52,7 @@ export default function AuthPage({ token, user, onSessionChange }: AuthPageProps
 
       saveAuth(result);
       onSessionChange();
-      navigate(result.user.role === "admin" ? "/admin" : "/dashboard", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (error) {
       setAlert({ type: "danger", message: error instanceof Error ? error.message : "Login failed" });
     } finally {
@@ -91,7 +89,7 @@ export default function AuthPage({ token, user, onSessionChange }: AuthPageProps
 
       saveAuth(result);
       onSessionChange();
-      navigate(result.user.role === "admin" ? "/admin" : "/dashboard", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (error) {
       setAlert({ type: "danger", message: error instanceof Error ? error.message : "Registration failed" });
     } finally {

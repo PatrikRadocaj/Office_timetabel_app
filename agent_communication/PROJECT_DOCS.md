@@ -99,6 +99,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260708-003 | 2026-07-08 | Proposed | Keep `AGENTS.md` and `CLAUDE.md` as lightweight entrypoints that point to shared docs. | Codex and Claude commonly discover different startup files; both should converge on the same documentation. | User |
 | D-20260708-004 | 2026-07-08 | Accepted | Use only the React/Vite frontend and remove the old vanilla frontend. | The user explicitly chose the React frontend as the single UI path. | User |
 | D-20260708-005 | 2026-07-08 | Accepted | FastAPI remains the API server and may serve the built React app from `react-app/dist`. | This supports Vite development and a single-server production-style run. | Codex |
+| D-20260708-006 | 2026-07-08 | Accepted | Admin users are also allowed to use the normal personal dashboard and should land on `/dashboard` after login. | Admins may also be employees; `/admin` remains protected and reachable from the dashboard. | User |
 
 ## Known Issues And Risks
 
@@ -110,6 +111,7 @@ C:\Users\User\Desktop\web projekt\
 | RISK-004 | Security | Firebase credentials and service account files must not be exposed. | High | Open | Keep secrets out of commits and screenshots. |
 | RISK-005 | QA freshness | Existing QA reports are from 2026-05-09. | Medium | Open | Run a fresh baseline after protocol approval and before major development. |
 | RISK-006 | Routing | FastAPI currently serves React only for `/`, `/dashboard`, and `/admin`. | Low | Open | Add an SPA catch-all when new React routes are introduced so direct navigation does not 404. |
+| RISK-007 | Role UX | Admins have both employee-dashboard and admin-panel access. | Low | Monitoring | Keep `/admin` protected; do not reintroduce automatic redirects away from `/dashboard`. |
 
 ## Next Steps / Backlog
 
