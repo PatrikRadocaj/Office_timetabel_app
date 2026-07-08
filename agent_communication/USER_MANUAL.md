@@ -217,7 +217,7 @@ When a daily demand save uses `replace_existing_day=false`, the backend writes a
 5. Review the schedule ID, total required agents, total assigned agents, uncovered demand, and assignment rows.
 6. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
 
-The scheduler respects agent availability windows. Agents with no availability windows are treated as always available.
+The scheduler respects agent availability windows and evaluates them in the agent's office local timezone, so a Monday 09:00-17:00 window means 09:00-17:00 at that agent's office. Agents with no availability windows are treated as always available.
 
 Note: the schedule generation start/end controls use the admin browser's local timezone. Demand days are defined in each office's timezone, so adjust the window when generating schedules for offices in a different timezone.
 

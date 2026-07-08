@@ -93,6 +93,7 @@ C:\Users\User\Desktop\web projekt\
 | FEAT-004 | Add agent availability management in React | Done | Codex | Admin agent create/edit now sends and displays office-local weekday/hour availability windows |
 | DATA-003 | Compact demand forecast storage | Done | Codex | Daily demand saves now write one Firestore document per office/date/interval and expand to slots only in memory |
 | DATA-004 | Migrate legacy demand slot documents to compact storage | Done | Codex | Legacy per-slot demand documents were backed up, compacted into 35 daily documents, and deleted from Firestore |
+| SCHED-001 | Match availability windows in office-local time | Done | Claude | Scheduler localizes availability and shift-preference hours to the agent's office timezone; midnight-ending slot leak fixed; TimeWindow now validated server-side |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
 | DEV-001 | Audit current dirty worktree before development | Proposed | Codex/Claude | Local modified files and runtime logs exist as of 2026-07-08 |
 
@@ -107,7 +108,8 @@ C:\Users\User\Desktop\web projekt\
 | D-20260708-005 | 2026-07-08 | Accepted | FastAPI remains the API server and may serve the built React app from `react-app/dist`. | This supports Vite development and a single-server production-style run. | Codex |
 | D-20260708-006 | 2026-07-08 | Accepted | Admin users are also allowed to use the normal personal dashboard and should land on `/dashboard` after login. | Admins may also be employees; `/admin` remains protected and reachable from the dashboard. | User |
 | D-20260708-007 | 2026-07-08 | Accepted | Store demand forecasts as compact daily documents instead of one Firestore document per non-zero slot/skill. | This sharply reduces Firestore document count, read/write volume, and quota pressure while preserving slot-level scheduler behavior in memory. | User |
-| D-20260708-008 | 2026-07-08 | Accepted | Agent availability windows use office-local whole hours with Monday = 0 through Sunday = 6; an empty availability list means always available. | This matches the backend scheduler's weekday handling and preserves existing unrestricted-agent behavior. | Codex |
+| D-20260708-008 | 2026-07-08 | Accepted | Agent availability windows use office-local whole hours with Monday = 0 through Sunday = 6; an empty availability list means always available. | Office-local hours match how demand days are defined; unrestricted-agent behavior is preserved. Rationale corrected 2026-07-08: the scheduler originally matched in UTC and was fixed under SCHED-001 to make this contract true. | Codex |
+| D-20260708-009 | 2026-07-08 | Accepted | The scheduler evaluates availability windows and shift-preference day/night hours in the AGENT'S office timezone (not UTC, not the demand office). | Availability windows are entered per agent and documented as office-local; using the agent's own office keeps the contract true even if an agent is assigned to another office's demand. | Claude |
 
 ## Known Issues And Risks
 

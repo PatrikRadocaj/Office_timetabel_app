@@ -8,11 +8,11 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import get_settings
+from app.core.timezones import resolve_office_timezone
 from app.models.agent import AgentCreate, AgentUpdate
 from app.models.demand import (
     DailyDemandForecastCreate,
@@ -450,11 +450,7 @@ class DemandService:
 
     @staticmethod
     def _resolve_office_timezone(office: dict[str, Any]):
-        timezone_name = str(office.get("timezone") or "UTC")
-        try:
-            return ZoneInfo(timezone_name)
-        except Exception:
-            return timezone.utc
+        return resolve_office_timezone(office)
 
     def _validate_references(self, office_id: str, skill_id: str) -> dict[str, Any]:
         office = self.office_repo.get(office_id)

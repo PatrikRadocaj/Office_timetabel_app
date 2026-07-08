@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
 
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
+from app.core.timezones import resolve_office_timezone
 from app.models.schedule import ScheduleGenerationRequest
 from app.models.common import utcnow
 from app.repositories.agents_repository import AgentsRepository
@@ -48,6 +49,7 @@ class SchedulerService:
         agents = [agent for agent in self.agent_repo.list() if agent.get("is_active", True)]
         offices = {office["id"]: office for office in self.office_repo.list()}
         skills = {skill["id"]: skill for skill in self.skill_repo.list()}
+        office_timezones = {office_id: resolve_office_timezone(office) for office_id, office in offices.items()}
 
         if not demand_rows:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No demand rows for selected window")
@@ -94,6 +96,7 @@ class SchedulerService:
                     agent_state=agent_state,
                     skills=skills,
                     slot_hours=slot_hours,
+                    office_timezones=office_timezones,
                 )
 
                 selected_ids: list[str] = []
@@ -178,9 +181,9 @@ class SchedulerService:
         agent_state: dict[str, dict[str, Any]],
         skills: dict[str, dict[str, Any]],
         slot_hours: float,
+        office_timezones: dict[str, tzinfo],
     ) -> list[dict[str, Any]]:
         min_proficiency = int(skills.get(skill_id, {}).get("min_proficiency", 1))
-        slot_hour = slot_start.hour
 
         eligible: list[tuple[float, dict[str, Any]]] = []
         for agent in agents:
@@ -191,7 +194,9 @@ class SchedulerService:
             if not self._agent_has_skill(agent, skill_id, min_proficiency):
                 continue
 
-            if not self._agent_is_available(agent, slot_start, slot_end):
+            # Availability windows and shift preferences are office-local.
+            office_tz = office_timezones.get(agent.get("office_id"), timezone.utc)
+            if not self._agent_is_available(agent, slot_start, slot_end, office_tz):
                 continue
 
             state = agent_state[agent_id]
@@ -209,7 +214,9 @@ class SchedulerService:
                     continue
 
             # Lower score is better.
-            preference_score = self._shift_preference_penalty(agent.get("shift_preference", "any"), slot_hour)
+            preference_score = self._shift_preference_penalty(
+                agent.get("shift_preference", "any"), slot_start.astimezone(office_tz).hour
+            )
             load_score = state["weekly_hours"]
             score = preference_score * 100.0 + load_score
             eligible.append((score, agent))
@@ -225,14 +232,16 @@ class SchedulerService:
         return False
 
     @staticmethod
-    def _agent_is_available(agent: dict[str, Any], slot_start: datetime, slot_end: datetime) -> bool:
+    def _agent_is_available(agent: dict[str, Any], slot_start: datetime, slot_end: datetime, office_tz: tzinfo) -> bool:
         availability = agent.get("availability", [])
         if not availability:
             return True
 
-        weekday = slot_start.weekday()
-        slot_start_hour = slot_start.hour + slot_start.minute / 60.0
-        slot_end_hour = slot_end.hour + slot_end.minute / 60.0
+        local_start = slot_start.astimezone(office_tz)
+        weekday = local_start.weekday()
+        slot_start_hour = local_start.hour + local_start.minute / 60.0
+        # Derive the end from the duration so a slot ending at local midnight reads as 24.0, not 0.0.
+        slot_end_hour = slot_start_hour + (slot_end - slot_start).total_seconds() / 3600.0
 
         for window in availability:
             if int(window.get("day_of_week", -1)) != weekday:
