@@ -53,7 +53,7 @@ class OfficeService:
         return self.repo.list(order_by="name")
 
     def update(self, office_id: str, payload: OfficeUpdate) -> dict[str, Any]:
-        updated = self.repo.update(office_id, payload.model_dump(exclude_none=True))
+        updated = self.repo.update(office_id, payload.model_dump(exclude_unset=True))
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Office not found")
         return updated
@@ -78,7 +78,7 @@ class SkillService:
         return self.repo.list(order_by="name")
 
     def update(self, skill_id: str, payload: SkillUpdate) -> dict[str, Any]:
-        updated = self.repo.update(skill_id, payload.model_dump(exclude_none=True))
+        updated = self.repo.update(skill_id, payload.model_dump(exclude_unset=True))
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
         return updated

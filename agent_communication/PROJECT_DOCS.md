@@ -130,8 +130,11 @@ C:\Users\User\Desktop\web projekt\
 11. Show the start-end range in the schedule assignment table's Time column.
 12. Clear stale `scheduleResult` when a new schedule generation attempt fails.
 13. Add office-timezone-aware schedule generation windows so admin browser timezone differences do not produce partial office-day windows.
-14. Update the task board with the first approved development task.
-15. Keep the user manual current as features stabilize.
+14. Add referential-integrity guards for office and skill deletes, returning `409` with reference counts or documenting an intentional cascade policy.
+15. Enforce office and skill name uniqueness on update, matching the create-path `409`; also apply the weekly max-hours hard-limit check in agent update.
+16. Validate office timezone values as real IANA zones on create/update, or replace free-text timezone entry with a timezone select in the UI.
+17. Update the task board with the first approved development task.
+18. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 
