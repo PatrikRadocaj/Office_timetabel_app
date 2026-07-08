@@ -120,8 +120,11 @@ C:\Users\User\Desktop\web projekt\
 3. Run backend unit tests and API health checks.
 4. Run React build and UI smoke checks.
 5. Add a FastAPI SPA catch-all before introducing additional React routes.
-6. Update the task board with the first approved development task.
-7. Keep the user manual current as features stabilize.
+6. Decide whether `GET /api/v1/dashboard/summary` should be admin-only; it currently requires only authentication, so agents can read company-wide coverage metrics.
+7. Add frontend test infrastructure, such as Vitest and React Testing Library, so routing guards like `ProtectedRoute` get automated coverage.
+8. Consider admin-specific dashboard copy for admins with no agent profile; the current generic dashboard says "You have a day off today" and shows an empty shift card.
+9. Update the task board with the first approved development task.
+10. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 
