@@ -3,6 +3,53 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Task ID: AUTH-INVALID-TOKEN-REDIRECT (review)
+- Timestamp: 2026-07-08
+- Current state: Review complete. APPROVED — all acceptance criteria met; no blocking findings.
+- Completed: Reviewed api.ts, DashboardPage, AdminPage, ProtectedRoute, App.tsx, and the task log entry. Ran React build and verified the backend 401 contract with TestClient.
+- Findings (ordered by severity — none blocking):
+  1. Low — Session-ending statuses other than 401 are not handled: a 403 "User is disabled" or 404 "User profile not found" from `get_current_user` leaves the user inside the protected shell with an error banner and a stored-but-useless token. Both are real "your session is no good" cases for a deactivated/deleted user. Out of this task's scope (which specified 401), but suggest a backlog item to treat them like invalid sessions.
+  2. Info — `DashboardPage`/`AdminPage` data-loading effects depend on `handleUnauthorized`/`handleApiError`, whose identity chains to `onSessionChange` (`syncSession` in App.tsx is recreated on every App render). Safe today because App only re-renders on session change, which immediately navigates away — but if App ever gains unrelated state, these effects will silently re-run and refetch everything. One-line hardening: wrap `syncSession` in `useCallback`. Optional.
+  3. Info — AdminPage's init effect has no `active`/cancelled guard (DashboardPage has one). Post-unmount setState is a no-op in React 18, so harmless; consistency nit only.
+- Review-goal confirmations:
+  1. Auth cleared on protected 401s: confirmed at two layers — `apiRequest` calls `clearAuth()` for any `auth: true` 401 (so `ccs_id_token`/`ccs_user` leave localStorage even if a caller forgets to handle the error), and page-level `handleUnauthorized` clears app state via `onSessionChange`.
+  2. Redirect + shell suppression: confirmed — both pages set `sessionInvalid`, render `null`, and `navigate("/", { replace: true })`; no error banner renders for the 401 case because `handleApiError`/the dashboard catch return early for unauthorized errors.
+  3. Public auth calls unaffected: confirmed — login/register use `auth: false`, so a wrong-password 401 does NOT clear storage and still shows the form error; logout intentionally ignores failure and clears anyway.
+  4. No infinite loop / races: confirmed — redirect is one-way (cleared token means ProtectedRoute and AuthPage both resolve to the login view; `clearAuth` is idempotent). Audited every `apiRequest` call site in AdminPage: all protected calls route through `handleApiError` (init, create office/skill/agent, demand grid, daily forecast save, CSV upload, chart, and the reload helpers which are only called inside those try blocks).
+  5. Valid session path intact: confirmed by code review (2xx path in `apiRequest` unchanged) and passing build; Codex's Chrome automation evidence covers runtime. Backend contract verified live: TestClient shows 401 for missing and invalid tokens on `/me/dashboard` and `/offices`, matching the frontend's 401-only check.
+  6. Task log accurate: confirmed — files-touched list matches `git diff` (App.tsx/ProtectedRoute correctly untouched), and claimed behavior matches the implementation.
+- Commands/tests run:
+  - `npm run build` (react-app) -> passed (tsc + vite)
+  - Backend TestClient: `GET /api/v1/me/dashboard` no token -> 401; invalid token -> 401; `GET /api/v1/offices` invalid token -> 401
+- Blockers: None. Task can be considered done and committed.
+- Next step: Codex commits the work. Optional backlog: handle 403-disabled/404-missing-profile as session-ending (finding 1); `useCallback` around `syncSession` (finding 2).
+
+## Status Update
+- Agent: Codex
+- Task ID: AUTH-INVALID-TOKEN-REDIRECT
+- Timestamp: 2026-07-08
+- Current state: Done.
+- Completed:
+  - Added typed `ApiError` handling in `react-app/src/lib/api.ts`.
+  - Protected API calls now clear saved auth when they receive HTTP 401.
+  - DashboardPage and AdminPage now treat 401 as an invalid session, clear app auth state, redirect to `/`, and suppress protected shell/error rendering.
+  - AdminPage protected API error handling is centralized so load, create, upload, save, and chart actions all handle expired tokens consistently.
+- Files touched:
+  - `react-app/src/lib/api.ts`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `npm run build` from `react-app` -> passed
+  - Manual invalid-token check with Chrome automation:
+    - Seeded invalid `ccs_id_token` and user in localStorage, opened `/dashboard` -> redirected to `/`, auth storage cleared, login shown, protected shell/API error absent.
+    - Seeded invalid `ccs_id_token` and user in localStorage, opened `/admin` -> redirected to `/`, auth storage cleared, login shown, protected shell/API error absent.
+- Backend tests: Not run; backend code was not touched.
+- Open issues: None for this task.
+- Next step: Optional review/commit when approved.
+
+## Status Update
 - Agent: Codex
 - Task ID: AUTH-ADMIN-DASHBOARD-DEFAULT closeout
 - Timestamp: 2026-07-08

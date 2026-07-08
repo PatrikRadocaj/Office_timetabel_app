@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Chart from "chart.js/auto";
 import type { Chart as ChartType } from "chart.js";
 import AlertBanner from "../components/AlertBanner";
-import { apiRequest } from "../lib/api";
+import { apiRequest, isUnauthorizedError } from "../lib/api";
 import { clearAuth } from "../lib/auth";
 import {
   buildTimeBlocks,
@@ -90,8 +90,27 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [chartInterval, setChartInterval] = useState<30 | 60>(30);
   const [chartSkillFilter, setChartSkillFilter] = useState("all");
   const [latestDayView, setLatestDayView] = useState<DemandDayView | null>(null);
+  const [sessionInvalid, setSessionInvalid] = useState(false);
 
   const skillNameById = useMemo(() => Object.fromEntries(skills.map((skill) => [skill.id, skill.name])), [skills]);
+
+  const handleUnauthorized = useCallback(() => {
+    setSessionInvalid(true);
+    clearAuth();
+    onSessionChange();
+    navigate("/", { replace: true });
+  }, [navigate, onSessionChange]);
+
+  const handleApiError = useCallback(
+    (error: unknown, fallbackMessage: string) => {
+      if (isUnauthorizedError(error)) {
+        handleUnauthorized();
+        return;
+      }
+      setAlert({ type: "danger", message: error instanceof Error ? error.message : fallbackMessage });
+    },
+    [handleUnauthorized],
+  );
 
   useEffect(() => {
     if (user?.role !== "admin") {
@@ -127,12 +146,12 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
         setAgents(agentRows);
         setDemandRows(demand);
       } catch (error) {
-        setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to initialize admin panel" });
+        handleApiError(error, "Failed to initialize admin panel");
       }
     };
 
     void init();
-  }, []);
+  }, [handleApiError]);
 
   useEffect(() => {
     if (!latestDayView || !chartCanvasRef.current) {
@@ -318,7 +337,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setAlert({ type: "success", message: "Office created successfully." });
       await reloadOffices();
     } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to create office" });
+      handleApiError(error, "Failed to create office");
     }
   };
 
@@ -347,7 +366,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setAlert({ type: "success", message: "Skill created successfully." });
       await Promise.all([reloadSkills(), reloadAgents()]);
     } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to create skill" });
+      handleApiError(error, "Failed to create skill");
     }
   };
 
@@ -387,7 +406,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setAlert({ type: "success", message: "Agent created successfully." });
       await reloadAgents();
     } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to create agent" });
+      handleApiError(error, "Failed to create agent");
     }
   };
 
@@ -445,7 +464,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
       setAlert({ type: "success", message: "Demand grid generated for selected day and interval." });
     } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to generate demand grid" });
+      handleApiError(error, "Failed to generate demand grid");
     }
   };
 
@@ -517,7 +536,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
       await Promise.all([reloadDemand(), loadChart()]);
     } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to save daily forecast" });
+      handleApiError(error, "Failed to save daily forecast");
     }
   };
 
@@ -543,7 +562,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setCsvFile(null);
       await reloadDemand();
     } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "CSV upload failed" });
+      handleApiError(error, "CSV upload failed");
     }
   };
 
@@ -568,7 +587,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
         });
       }
     } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to load chart" });
+      handleApiError(error, "Failed to load chart");
     }
   };
 
@@ -581,6 +600,10 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     setSelectedDemandSkillIds(checked ? skills.map((skill) => skill.id) : []);
     setDemandGrid(null);
   };
+
+  if (sessionInvalid) {
+    return null;
+  }
 
   return (
     <>

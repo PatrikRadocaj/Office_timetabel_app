@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AlertBanner from "../components/AlertBanner";
-import { apiRequest } from "../lib/api";
+import { apiRequest, isUnauthorizedError } from "../lib/api";
 import { clearAuth } from "../lib/auth";
 import { formatDate, formatHours, formatTime } from "../lib/format";
 import type { AgentDashboardData, UserProfile } from "../types";
@@ -17,6 +17,14 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ type: "info" | "danger"; message: string } | null>(null);
+  const [sessionInvalid, setSessionInvalid] = useState(false);
+
+  const handleUnauthorized = useCallback(() => {
+    setSessionInvalid(true);
+    clearAuth();
+    onSessionChange();
+    navigate("/", { replace: true });
+  }, [navigate, onSessionChange]);
 
   useEffect(() => {
     let active = true;
@@ -30,6 +38,10 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
           setData(payload);
         }
       } catch (err) {
+        if (active && isUnauthorizedError(err)) {
+          handleUnauthorized();
+          return;
+        }
         if (active) {
           setError(err instanceof Error ? err.message : "Unable to load dashboard");
         }
@@ -44,7 +56,7 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
     return () => {
       active = false;
     };
-  }, []);
+  }, [handleUnauthorized]);
 
   const handleLogout = async () => {
     try {
@@ -61,6 +73,10 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
   const showQuickActionMessage = (action: string) => {
     setAlert({ type: "info", message: `${action} is not enabled yet. Please contact your scheduler manager.` });
   };
+
+  if (sessionInvalid) {
+    return null;
+  }
 
   return (
     <>

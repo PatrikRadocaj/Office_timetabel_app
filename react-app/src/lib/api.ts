@@ -1,6 +1,22 @@
-import { getAuthToken } from "./auth";
+import { clearAuth, getAuthToken } from "./auth";
 
 const API_PREFIX = "/api/v1";
+
+export class ApiError extends Error {
+  status: number;
+  payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown = null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+export function isUnauthorizedError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 401;
+}
 
 interface ApiOptions {
   method?: string;
@@ -35,7 +51,10 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
 
   if (!response.ok) {
     const detail = payload?.detail || `Request failed (${response.status})`;
-    throw new Error(detail);
+    if (auth && response.status === 401) {
+      clearAuth();
+    }
+    throw new ApiError(detail, response.status, payload);
   }
 
   return payload as T;
