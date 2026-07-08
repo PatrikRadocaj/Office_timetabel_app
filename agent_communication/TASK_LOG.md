@@ -4,6 +4,141 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 
 ## Status Update
 - Agent: Codex
+- Task ID: FEAT-003 review closeout
+- Timestamp: 2026-07-08 20:42:38 +02:00
+- Current state: Review closeout complete; frontend feature and backend fix committed.
+- Completed:
+  - Fixed Claude finding 1 in `OfficeService.update` and `SkillService.update` by preserving explicitly sent `null` values with `exclude_unset=True`.
+  - Added regression coverage proving office `address: null` and skill `description: null` reach the repository update payload.
+  - Checked `AgentService.update`: it still uses `exclude_none=True`; no change made because the React FEAT-003 agent edit UI sends concrete values and never sends `null` for agent fields or `availability`.
+  - Added backend backlog-only items for referential-integrity delete guards, update-path uniqueness/hours-limit consistency, and real IANA timezone validation or a timezone select.
+  - Committed FEAT-003 frontend UI/docs and the backend finding-1 fix as scoped commits.
+- Commit hashes:
+  - FEAT-003 frontend/docs: `526a76ff81ab362b5e4e5b4c1d2f221199e36a82`
+  - Backend nullable update fix/backlog: `f733a77287336df75fac6d61ec829320a5e3452e`
+- Files changed:
+  - `react-app/src/pages/AdminPage.tsx`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/tests/test_catalog_update_nulls.py`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `npm run build` from `react-app` -> passed; Vite reported the existing >500 kB chunk-size warning.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 6 passed.
+- Fixed vs backlogged:
+  - Fixed: clearing an office address or skill description via edit now persists.
+  - Backlogged: referential-integrity guards for deletes; update-path uniqueness and agent weekly-hours hard-limit consistency; office timezone validation/select.
+- Open issues:
+  - Manual admin CRUD smoke remains pending: edit and delete an office, skill, and agent as admin; verify clearing an office address persists.
+  - `call-center-scheduler/scripts/reset_idnow_demo_firestore.py` and `call-center-scheduler/scripts/populate_current_week_idnow_demand.py` remain uncommitted; user should decide separately whether these seed scripts belong in version control.
+  - Runtime logs, Firestore backups, Firestore quota-handling local changes, quota manual note, and line-ending-only `react-app/vite.config.ts` remain outside this FEAT-003 commit scope.
+- Next step: User runs the manual CRUD smoke test, or Claude reviews the FEAT-003 closeout commits.
+
+## Status Update
+- Agent: Codex
+- Task ID: FIRESTORE-QUOTA-DIAG
+- Timestamp: 2026-07-08 20:41:42 +02:00
+- Current state: Diagnosed and clarified error handling; underlying Firebase quota issue remains external.
+- Completed:
+  - Investigated the admin banner "Cloud Firestore is unavailable. Retry later or verify project configuration."
+  - Confirmed FastAPI health is OK and the failure is isolated to Firestore-backed endpoints.
+  - Ran a direct backend Firestore read for project `scheduler-app-54991`; Google returned `google.api_core.exceptions.ResourceExhausted: 429 Quota exceeded`.
+  - Updated Firestore repository error mapping so quota exhaustion now returns a specific message: "Cloud Firestore quota is exceeded for the configured project..."
+  - Added a `USER_MANUAL.md` troubleshooting row for Firestore quota exhaustion.
+  - Recorded the quota risk as `RISK-008` in `PROJECT_DOCS.md`.
+  - Restarted the local FastAPI server on port 8000; `/api/health` returns 200.
+- Files touched:
+  - `call-center-scheduler/backend/app/repositories/firestore_repository.py`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - Direct Firestore read from backend environment -> failed with `429 Quota exceeded`.
+  - Repository wrapper smoke -> returns quota-specific `DependencyUnavailableError`.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 4 passed.
+  - Restarted Uvicorn on `127.0.0.1:8000`; `GET /api/health` -> 200.
+- Open issues:
+  - Firestore quota is still exceeded. Admin data will not load until quota resets, usage is reduced, or the Firebase/Google Cloud quota is increased.
+  - Existing runtime logs, Firestore backup/script artifacts, and `react-app/vite.config.ts` remain outside this diagnosis.
+- Next step: Wait for quota reset or increase quota; then reload `/admin` and continue CRUD smoke testing and DATA-002 cleanup.
+
+## Status Update
+- Agent: Codex
+- Task ID: DATA-002
+- Timestamp: 2026-07-08
+- Current state: Populated with cleanup pending after Firestore quota recovery.
+- Completed: Generated realistic IDnow-inspired 30-minute demand for the current week, Monday 2026-07-06 through Sunday 2026-07-12, using the same daily-grid schema as the React Daily Demand Forecast Builder.
+- In progress: None; stopped to avoid continuing Firestore requests while quota is exhausted.
+- Blockers: Firestore returned `429 Quota exceeded` during final cleanup/verification.
+- Files touched:
+  - `call-center-scheduler/scripts/populate_current_week_idnow_demand.py`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python scripts\populate_current_week_idnow_demand.py` -> dry run planned 35 daily payloads, 11048 expected demand rows, 28746 total required agent slots
+  - Initial `--execute` through `DemandService.create_daily` timed out after writing partial Monday/Tuesday/Wednesday rows
+  - Batched `--execute` backed up partial rows, replaced current-week demand, and wrote 11048 deterministic builder-compatible rows
+  - Verification immediately after batch write reported 11274 current-week rows: 11048 intended rows plus 226-228 leftover partial rows from the timed-out writer
+- Backup: `runtime_logs\firestore-demand-before-week-seed-20260708-182223.json`
+- Next step: After Firestore quota recovers, delete current-week rows whose document id does not start with `idnow_week_` or rerun `python scripts\populate_current_week_idnow_demand.py --execute` once no old writer is active.
+
+## Status Update
+- Agent: Claude
+- Task ID: FEAT-003 (review)
+- Timestamp: 2026-07-08
+- Current state: Review complete. Verdict: APPROVED WITH FINDINGS — the frontend implementation is correct and complete against the current backend contracts, but the review surfaced two Medium backend-behavior gaps that the new UI now exposes to users. Manual CRUD smoke remains pending (admin session blocker, same as Codex reported).
+- Completed: Reviewed the full AdminPage FEAT-003 diff against `OfficeUpdate`/`SkillUpdate`/`AgentUpdate` models, the offices/skills/agents routers, and `catalog_service` update/delete implementations; checked 401 handling, refresh wiring, table structure, and docs. Ran React build and backend tests.
+- Findings (ordered by severity):
+  1. Medium — Clearing an office address or skill description does not persist. The edit UI sends `address: null` / `description: null` to clear the field, but backend updates use `payload.model_dump(exclude_none=True)` (`catalog_service.py` OfficeService.update line ~56, SkillService.update line ~81), which strips nulls — so the old value survives and visibly reappears in the table after the post-save reload, despite the success alert. Fix direction (backend, preferred): switch update dumps to `exclude_unset=True` so explicitly-sent nulls persist; or (frontend workaround): send `""` instead of `null` (both fields accept empty strings). Needs a small backend task + test.
+  2. Medium — Deletes have no referential-integrity guard, and the new UI makes them one browser-confirm away. `OfficeService.delete`/`SkillService.delete` remove the document without checking agents, demand forecasts, or schedules that reference it. Consequences: agents keep a dangling `office_id` (scheduler treats the missing office as capacity 0, silently zeroing assignments for that office's demand; dashboards fall back to raw ids/UTC), and demand rows keep dangling `skill_id`s. Suggest a backend guard (409 with reference counts, or an explicit cascade decision) as a follow-up task; optionally the UI confirm could show reference counts.
+  3. Low — Name uniqueness is enforced on create (409) but not on update, for both offices and skills — renaming to an existing name silently creates duplicates. Same family: the `weekly_max_hours` hard-limit check exists only in `AgentService.create`, not update (harmless while the limit is 60, which equals the model cap). Backend consistency gap.
+  4. Low — Office timezone is edited as free text; an invalid value is accepted by the API (any 2–60 char string) and silently falls back to UTC in demand building (`_resolve_office_timezone`). A select of IANA zones or backend validation would prevent silently misaligned demand days. (Pre-existing for the create form; the edit UI now makes it more reachable.)
+  5. Info — Number-input UX inconsistency: office capacity uses string state (good pattern), but skill min-proficiency and agent hours/proficiency inputs coerce an emptied field to `0` immediately; validation blocks the save with a clear error, so cosmetic only.
+  6. Info — If a post-update reload fails (non-401), the catch shows "Failed to update …" even though the update itself succeeded; message could mislead. Pre-existing pattern shared with the create actions; note only.
+- Correctness confirmations (what Codex claimed vs what the code does):
+  1. All claimed edit fields are present and match the backend models: office name/timezone/capacity/address (`OfficeUpdate`); skill name/min-proficiency/description (`SkillUpdate`); agent full name/office/weekly max/min rest/shift preference/skills (`AgentUpdate`). Email is correctly shown read-only (AgentUpdate has no email field); `availability` is correctly omitted and preserved (`exclude_none` drops it).
+  2. Frontend validation mirrors model constraints (capacity > 0, proficiency 1–5, hours 1–60, rest 1–24, duplicate agent-skill prevention) and the backend re-validates office/skill references on agent update.
+  3. Deletes use `window.confirm` before DELETE; delete of an entity clears any open edit state for it, and deleting a skill also strips it from an in-progress agent edit — good defensive touch.
+  4. Refresh wiring is correct and consistent: office/skill changes reload offices+agents+demand and the summary; agent changes reload agents and the summary; all summary refreshes use `loadAdminSummary({ preserveAlert: true })` so non-401 refresh failures cannot clobber the success alert (the FEAT-002 finding-1 fix carried through consistently).
+  5. 401 handling not regressed: every new action routes errors through `handleApiError` → `handleUnauthorized`; `preserveAlert` deliberately does not swallow 401s.
+  6. Table structure correct: new Actions column added to all three tables; the agent edit row + skills sub-row use a keyed `Fragment` with `colSpan={7}` matching the 7-column header; create forms untouched.
+  7. Docs and task log accurate: PROJECT_DOCS gained the FEAT-003 row; USER_MANUAL documents the manage/edit/delete workflow; files-touched matches `git status`.
+- Commands/tests run:
+  - `npm run build` (react-app) -> passed (pre-existing chunk-size warning only)
+  - `python -m pytest backend/tests` -> 4 passed
+- Manual smoke status: NOT RUN — still blocked on a local admin session. Needed: log in as admin, edit and delete an office/skill/agent, verify refreshes and alerts; specifically try clearing an address to reproduce finding 1.
+- Recommended next step: Codex fixes finding 1 (small backend change + test), records findings 2–4 as backend backlog tasks, and commits FEAT-003 scoped; user runs the CRUD smoke afterward.
+
+## Status Update
+- Agent: Codex
+- Task ID: FEAT-003 admin catalog edit/delete UI
+- Timestamp: 2026-07-08 20:11:30 +02:00
+- Current state: Implementation complete; automated verification passed; manual browser CRUD smoke is blocked by missing local admin session.
+- Completed:
+  - Added inline Edit and Delete actions to the Admin Data Preview tables for offices, skills, and agents.
+  - Office edit supports name, timezone, capacity, and address.
+  - Skill edit supports name, minimum proficiency, and description.
+  - Agent edit supports full name, office, weekly max hours, minimum rest hours, shift preference, and skill/proficiency changes.
+  - Delete actions use browser confirmation before calling backend DELETE endpoints.
+  - Successful update/delete actions refresh affected lists and show success alerts; backend errors continue through the existing alert path.
+  - Create forms remain unchanged.
+  - Updated `PROJECT_DOCS.md` and `USER_MANUAL.md`.
+- Files touched:
+  - `react-app/src/pages/AdminPage.tsx`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `npm run build` from `react-app` -> passed; Vite reported the existing >500 kB chunk-size warning.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 4 passed.
+  - Browser smoke check: opening `http://127.0.0.1:5173/admin` redirected to login, so authenticated create/edit/delete UI smoke could not be run.
+- Open issues:
+  - Manual smoke for create/edit/delete of offices, skills, and agents still needs a valid local admin session.
+  - Runtime logs, Firestore backup/script artifacts, and the line-ending-only `react-app/vite.config.ts` marker remain outside this task.
+- Next step: User signs in as admin locally and runs the CRUD smoke test, or Claude reviews FEAT-003 first.
+
+## Status Update
+- Agent: Codex
 - Task ID: FEAT-002 review closeout
 - Timestamp: 2026-07-08 19:46:10 +02:00
 - Current state: Review closeout complete; FEAT-002 committed.
