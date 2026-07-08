@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Chart from "chart.js/auto";
 import type { Chart as ChartType } from "chart.js";
@@ -43,6 +43,31 @@ interface DemandGridState {
   selectedSkillIds: string[];
   priorities: Record<string, number>;
   quantities: Record<string, number[]>;
+}
+
+interface EditOfficeState {
+  id: string;
+  name: string;
+  timezone: string;
+  maxCapacity: string;
+  address: string;
+}
+
+interface EditSkillState {
+  id: string;
+  name: string;
+  minProficiency: number;
+  description: string;
+}
+
+interface EditAgentState {
+  id: string;
+  fullName: string;
+  officeId: string;
+  weeklyMaxHours: number;
+  minRestHours: number;
+  shiftPreference: string;
+  skills: PendingSkill[];
 }
 
 const chartColors = ["#0d6efd", "#198754", "#dc3545", "#fd7e14", "#6f42c1", "#20c997", "#6c757d", "#0dcaf0"];
@@ -118,6 +143,11 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [scheduleEnd, setScheduleEnd] = useState(defaultScheduleEnd);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleResult, setScheduleResult] = useState<ScheduleGenerationResponse | null>(null);
+  const [editingOffice, setEditingOffice] = useState<EditOfficeState | null>(null);
+  const [editingSkill, setEditingSkill] = useState<EditSkillState | null>(null);
+  const [editingAgent, setEditingAgent] = useState<EditAgentState | null>(null);
+  const [editAgentSkillId, setEditAgentSkillId] = useState("");
+  const [editAgentSkillProficiency, setEditAgentSkillProficiency] = useState(3);
   const [sessionInvalid, setSessionInvalid] = useState(false);
 
   const officeNameById = useMemo(() => Object.fromEntries(offices.map((office) => [office.id, office.name])), [offices]);
@@ -477,6 +507,266 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       await Promise.all([reloadAgents(), loadAdminSummary()]);
     } catch (error) {
       handleApiError(error, "Failed to create agent");
+    }
+  };
+
+  const startOfficeEdit = (office: Office) => {
+    clearAdminAlert();
+    setEditingOffice({
+      id: office.id,
+      name: office.name,
+      timezone: office.timezone,
+      maxCapacity: String(office.max_capacity),
+      address: office.address || "",
+    });
+  };
+
+  const updateOffice = async () => {
+    if (!editingOffice) {
+      return;
+    }
+    clearAdminAlert();
+
+    try {
+      requireValue(editingOffice.name, "Office name");
+      requireValue(editingOffice.timezone, "Timezone");
+
+      const capacity = Number(editingOffice.maxCapacity);
+      if (!Number.isFinite(capacity) || capacity <= 0) {
+        throw new Error("Office capacity must be a positive number");
+      }
+
+      await apiRequest<Office>(`/offices/${editingOffice.id}`, {
+        method: "PUT",
+        body: {
+          name: editingOffice.name.trim(),
+          timezone: editingOffice.timezone.trim(),
+          max_capacity: capacity,
+          address: editingOffice.address.trim() || null,
+        },
+      });
+
+      setEditingOffice(null);
+      setAlert({ type: "success", message: "Office updated successfully." });
+      await Promise.all([reloadOffices(), reloadAgents(), reloadDemand(), loadAdminSummary({ preserveAlert: true })]);
+    } catch (error) {
+      handleApiError(error, "Failed to update office");
+    }
+  };
+
+  const deleteOffice = async (office: Office) => {
+    clearAdminAlert();
+    if (!window.confirm(`Delete office "${office.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await apiRequest<{ message?: string }>(`/offices/${office.id}`, { method: "DELETE" });
+      setEditingOffice((current) => (current?.id === office.id ? null : current));
+      setAlert({ type: "success", message: "Office deleted successfully." });
+      await Promise.all([reloadOffices(), reloadAgents(), reloadDemand(), loadAdminSummary({ preserveAlert: true })]);
+    } catch (error) {
+      handleApiError(error, "Failed to delete office");
+    }
+  };
+
+  const startSkillEdit = (skill: Skill) => {
+    clearAdminAlert();
+    setEditingSkill({
+      id: skill.id,
+      name: skill.name,
+      minProficiency: skill.min_proficiency,
+      description: skill.description || "",
+    });
+  };
+
+  const updateSkill = async () => {
+    if (!editingSkill) {
+      return;
+    }
+    clearAdminAlert();
+
+    try {
+      requireValue(editingSkill.name, "Skill name");
+      if (!Number.isFinite(editingSkill.minProficiency) || editingSkill.minProficiency < 1 || editingSkill.minProficiency > 5) {
+        throw new Error("Skill minimum proficiency must be between 1 and 5");
+      }
+
+      await apiRequest<Skill>(`/skills/${editingSkill.id}`, {
+        method: "PUT",
+        body: {
+          name: editingSkill.name.trim(),
+          description: editingSkill.description.trim() || null,
+          min_proficiency: Number(editingSkill.minProficiency),
+        },
+      });
+
+      setEditingSkill(null);
+      setAlert({ type: "success", message: "Skill updated successfully." });
+      await Promise.all([reloadSkills(), reloadAgents(), reloadDemand(), loadAdminSummary({ preserveAlert: true })]);
+    } catch (error) {
+      handleApiError(error, "Failed to update skill");
+    }
+  };
+
+  const deleteSkill = async (skill: Skill) => {
+    clearAdminAlert();
+    if (!window.confirm(`Delete skill "${skill.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await apiRequest<{ message?: string }>(`/skills/${skill.id}`, { method: "DELETE" });
+      setEditingSkill((current) => (current?.id === skill.id ? null : current));
+      setEditingAgent((current) =>
+        current
+          ? {
+              ...current,
+              skills: current.skills.filter((entry) => entry.skill_id !== skill.id),
+            }
+          : current,
+      );
+      setAlert({ type: "success", message: "Skill deleted successfully." });
+      await Promise.all([reloadSkills(), reloadAgents(), reloadDemand(), loadAdminSummary({ preserveAlert: true })]);
+    } catch (error) {
+      handleApiError(error, "Failed to delete skill");
+    }
+  };
+
+  const startAgentEdit = (agent: Agent) => {
+    clearAdminAlert();
+    setEditingAgent({
+      id: agent.id,
+      fullName: agent.full_name,
+      officeId: agent.office_id,
+      weeklyMaxHours: agent.weekly_max_hours,
+      minRestHours: agent.min_rest_hours,
+      shiftPreference: agent.shift_preference,
+      skills: (agent.skills || []).map((skill) => ({
+        skill_id: skill.skill_id,
+        skill_name: skillNameById[skill.skill_id] || skill.skill_id,
+        proficiency: skill.proficiency,
+      })),
+    });
+    setEditAgentSkillId("");
+    setEditAgentSkillProficiency(3);
+  };
+
+  const addEditAgentSkill = () => {
+    clearAdminAlert();
+    if (!editingAgent) {
+      return;
+    }
+
+    const selectedSkillName = skills.find((skill) => skill.id === editAgentSkillId)?.name || "";
+    if (!editAgentSkillId) {
+      setAlert({ type: "warning", message: "Please select a skill first." });
+      return;
+    }
+    if (!Number.isFinite(editAgentSkillProficiency) || editAgentSkillProficiency < 1 || editAgentSkillProficiency > 5) {
+      setAlert({ type: "warning", message: "Skill proficiency must be between 1 and 5." });
+      return;
+    }
+    if (editingAgent.skills.some((skill) => skill.skill_id === editAgentSkillId)) {
+      setAlert({ type: "warning", message: "Skill already added for this agent." });
+      return;
+    }
+
+    setEditingAgent({
+      ...editingAgent,
+      skills: [
+        ...editingAgent.skills,
+        {
+          skill_id: editAgentSkillId,
+          skill_name: selectedSkillName,
+          proficiency: editAgentSkillProficiency,
+        },
+      ],
+    });
+    setEditAgentSkillId("");
+    setEditAgentSkillProficiency(3);
+  };
+
+  const updateEditAgentSkillProficiency = (skillId: string, proficiency: number) => {
+    setEditingAgent((current) =>
+      current
+        ? {
+            ...current,
+            skills: current.skills.map((skill) => (skill.skill_id === skillId ? { ...skill, proficiency } : skill)),
+          }
+        : current,
+    );
+  };
+
+  const removeEditAgentSkill = (skillId: string) => {
+    setEditingAgent((current) =>
+      current
+        ? {
+            ...current,
+            skills: current.skills.filter((skill) => skill.skill_id !== skillId),
+          }
+        : current,
+    );
+  };
+
+  const updateAgent = async () => {
+    if (!editingAgent) {
+      return;
+    }
+    clearAdminAlert();
+
+    try {
+      requireValue(editingAgent.fullName, "Agent name");
+      requireValue(editingAgent.officeId, "Agent office");
+
+      if (!Number.isFinite(editingAgent.weeklyMaxHours) || editingAgent.weeklyMaxHours < 1 || editingAgent.weeklyMaxHours > 60) {
+        throw new Error("Weekly max hours must be between 1 and 60");
+      }
+      if (!Number.isFinite(editingAgent.minRestHours) || editingAgent.minRestHours < 1 || editingAgent.minRestHours > 24) {
+        throw new Error("Minimum rest hours must be between 1 and 24");
+      }
+      for (const skill of editingAgent.skills) {
+        if (!Number.isFinite(skill.proficiency) || skill.proficiency < 1 || skill.proficiency > 5) {
+          throw new Error(`${skill.skill_name} proficiency must be between 1 and 5`);
+        }
+      }
+
+      await apiRequest<Agent>(`/agents/${editingAgent.id}`, {
+        method: "PUT",
+        body: {
+          full_name: editingAgent.fullName.trim(),
+          office_id: editingAgent.officeId,
+          weekly_max_hours: Number(editingAgent.weeklyMaxHours),
+          min_rest_hours: Number(editingAgent.minRestHours),
+          shift_preference: editingAgent.shiftPreference,
+          skills: editingAgent.skills.map((skill) => ({
+            skill_id: skill.skill_id,
+            proficiency: Number(skill.proficiency),
+          })),
+        },
+      });
+
+      setEditingAgent(null);
+      setAlert({ type: "success", message: "Agent updated successfully." });
+      await Promise.all([reloadAgents(), loadAdminSummary({ preserveAlert: true })]);
+    } catch (error) {
+      handleApiError(error, "Failed to update agent");
+    }
+  };
+
+  const deleteAgent = async (agent: Agent) => {
+    clearAdminAlert();
+    if (!window.confirm(`Delete agent "${agent.full_name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await apiRequest<{ message?: string }>(`/agents/${agent.id}`, { method: "DELETE" });
+      setEditingAgent((current) => (current?.id === agent.id ? null : current));
+      setAlert({ type: "success", message: "Agent deleted successfully." });
+      await Promise.all([reloadAgents(), loadAdminSummary({ preserveAlert: true })]);
+    } catch (error) {
+      handleApiError(error, "Failed to delete agent");
     }
   };
 
@@ -1339,17 +1629,73 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                               <th>TZ</th>
                               <th>Cap.</th>
                               <th>Address</th>
+                              <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {offices.map((office) => (
-                              <tr key={office.id}>
-                                <td>{office.name}</td>
-                                <td>{office.timezone}</td>
-                                <td>{office.max_capacity}</td>
-                                <td>{office.address || "-"}</td>
-                              </tr>
-                            ))}
+                            {offices.map((office) =>
+                              editingOffice?.id === office.id ? (
+                                <tr key={office.id}>
+                                  <td>
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={editingOffice.name}
+                                      onChange={(event) => setEditingOffice({ ...editingOffice, name: event.target.value })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={editingOffice.timezone}
+                                      onChange={(event) => setEditingOffice({ ...editingOffice, timezone: event.target.value })}
+                                    />
+                                  </td>
+                                  <td style={{ minWidth: 90 }}>
+                                    <input
+                                      className="form-control form-control-sm"
+                                      type="number"
+                                      min={1}
+                                      value={editingOffice.maxCapacity}
+                                      onChange={(event) => setEditingOffice({ ...editingOffice, maxCapacity: event.target.value })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={editingOffice.address}
+                                      onChange={(event) => setEditingOffice({ ...editingOffice, address: event.target.value })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <div className="d-flex gap-2">
+                                      <button className="btn btn-sm btn-primary" type="button" onClick={() => void updateOffice()}>
+                                        Save
+                                      </button>
+                                      <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => setEditingOffice(null)}>
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : (
+                                <tr key={office.id}>
+                                  <td>{office.name}</td>
+                                  <td>{office.timezone}</td>
+                                  <td>{office.max_capacity}</td>
+                                  <td>{office.address || "-"}</td>
+                                  <td>
+                                    <div className="d-flex gap-2">
+                                      <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => startOfficeEdit(office)}>
+                                        Edit
+                                      </button>
+                                      <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => void deleteOffice(office)}>
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ),
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -1370,16 +1716,66 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                               <th>Name</th>
                               <th>Min Prof.</th>
                               <th>Description</th>
+                              <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {skills.map((skill) => (
-                              <tr key={skill.id}>
-                                <td>{skill.name}</td>
-                                <td>{skill.min_proficiency}</td>
-                                <td>{skill.description || "-"}</td>
-                              </tr>
-                            ))}
+                            {skills.map((skill) =>
+                              editingSkill?.id === skill.id ? (
+                                <tr key={skill.id}>
+                                  <td>
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={editingSkill.name}
+                                      onChange={(event) => setEditingSkill({ ...editingSkill, name: event.target.value })}
+                                    />
+                                  </td>
+                                  <td style={{ minWidth: 90 }}>
+                                    <input
+                                      className="form-control form-control-sm"
+                                      type="number"
+                                      min={1}
+                                      max={5}
+                                      value={editingSkill.minProficiency}
+                                      onChange={(event) => setEditingSkill({ ...editingSkill, minProficiency: Number(event.target.value) })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      className="form-control form-control-sm"
+                                      value={editingSkill.description}
+                                      onChange={(event) => setEditingSkill({ ...editingSkill, description: event.target.value })}
+                                    />
+                                  </td>
+                                  <td>
+                                    <div className="d-flex gap-2">
+                                      <button className="btn btn-sm btn-primary" type="button" onClick={() => void updateSkill()}>
+                                        Save
+                                      </button>
+                                      <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => setEditingSkill(null)}>
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : (
+                                <tr key={skill.id}>
+                                  <td>{skill.name}</td>
+                                  <td>{skill.min_proficiency}</td>
+                                  <td>{skill.description || "-"}</td>
+                                  <td>
+                                    <div className="d-flex gap-2">
+                                      <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => startSkillEdit(skill)}>
+                                        Edit
+                                      </button>
+                                      <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => void deleteSkill(skill)}>
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ),
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -1403,29 +1799,185 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                               <th>Hours</th>
                               <th>Skills & Levels</th>
                               <th>Pref.</th>
+                              <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {agents.map((agent) => (
-                              <tr key={agent.id}>
-                                <td>{agent.full_name}</td>
-                                <td>{agent.email}</td>
-                                <td>{agent.office_id}</td>
-                                <td>{agent.weekly_max_hours}</td>
-                                <td>
-                                  {agent.skills?.length ? (
-                                    agent.skills.map((skill) => (
-                                      <span key={`${agent.id}-${skill.skill_id}`} className="ccs-skill-badge">
-                                        {(skillNameById[skill.skill_id] || skill.skill_id) + ` P${skill.proficiency}`}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span className="ccs-muted">No skills</span>
-                                  )}
-                                </td>
-                                <td>{agent.shift_preference}</td>
-                              </tr>
-                            ))}
+                            {agents.map((agent) =>
+                              editingAgent?.id === agent.id ? (
+                                <Fragment key={agent.id}>
+                                  <tr>
+                                    <td>
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={editingAgent.fullName}
+                                        onChange={(event) => setEditingAgent({ ...editingAgent, fullName: event.target.value })}
+                                      />
+                                    </td>
+                                    <td>{agent.email}</td>
+                                    <td style={{ minWidth: 160 }}>
+                                      <select
+                                        className="form-select form-select-sm"
+                                        value={editingAgent.officeId}
+                                        onChange={(event) => setEditingAgent({ ...editingAgent, officeId: event.target.value })}
+                                      >
+                                        <option value="">Choose office</option>
+                                        {offices.map((office) => (
+                                          <option key={office.id} value={office.id}>
+                                            {office.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td style={{ minWidth: 150 }}>
+                                      <div className="d-flex gap-2">
+                                        <input
+                                          className="form-control form-control-sm"
+                                          type="number"
+                                          min={1}
+                                          max={60}
+                                          value={editingAgent.weeklyMaxHours}
+                                          onChange={(event) =>
+                                            setEditingAgent({ ...editingAgent, weeklyMaxHours: Number(event.target.value) })
+                                          }
+                                        />
+                                        <input
+                                          className="form-control form-control-sm"
+                                          type="number"
+                                          min={1}
+                                          max={24}
+                                          value={editingAgent.minRestHours}
+                                          onChange={(event) => setEditingAgent({ ...editingAgent, minRestHours: Number(event.target.value) })}
+                                        />
+                                      </div>
+                                      <div className="small ccs-muted">weekly / rest</div>
+                                    </td>
+                                    <td className="ccs-muted">Edit below</td>
+                                    <td style={{ minWidth: 120 }}>
+                                      <select
+                                        className="form-select form-select-sm"
+                                        value={editingAgent.shiftPreference}
+                                        onChange={(event) => setEditingAgent({ ...editingAgent, shiftPreference: event.target.value })}
+                                      >
+                                        <option value="any">Any</option>
+                                        <option value="day">Day</option>
+                                        <option value="night">Night</option>
+                                      </select>
+                                    </td>
+                                    <td>
+                                      <div className="d-flex gap-2">
+                                        <button className="btn btn-sm btn-primary" type="button" onClick={() => void updateAgent()}>
+                                          Save
+                                        </button>
+                                        <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => setEditingAgent(null)}>
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <td colSpan={7}>
+                                      <div className="row g-2 align-items-end">
+                                        <div className="col-12">
+                                          <div className="small fw-semibold">Agent skills</div>
+                                        </div>
+                                        <div className="col-12">
+                                          {editingAgent.skills.length ? (
+                                            <div className="d-flex flex-wrap gap-2">
+                                              {editingAgent.skills.map((skill) => (
+                                                <div key={skill.skill_id} className="d-flex align-items-center gap-2 border rounded px-2 py-1">
+                                                  <span>{skillNameById[skill.skill_id] || skill.skill_name}</span>
+                                                  <input
+                                                    className="form-control form-control-sm"
+                                                    type="number"
+                                                    min={1}
+                                                    max={5}
+                                                    value={skill.proficiency}
+                                                    style={{ width: 72 }}
+                                                    onChange={(event) =>
+                                                      updateEditAgentSkillProficiency(skill.skill_id, Number(event.target.value))
+                                                    }
+                                                  />
+                                                  <button
+                                                    className="btn btn-sm btn-outline-danger"
+                                                    type="button"
+                                                    onClick={() => removeEditAgentSkill(skill.skill_id)}
+                                                  >
+                                                    Remove
+                                                  </button>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <p className="ccs-muted mb-0">No skills assigned.</p>
+                                          )}
+                                        </div>
+                                        <div className="col-md-5">
+                                          <label className="form-label">Add skill</label>
+                                          <select
+                                            className="form-select form-select-sm"
+                                            value={editAgentSkillId}
+                                            onChange={(event) => setEditAgentSkillId(event.target.value)}
+                                          >
+                                            <option value="">Choose skill</option>
+                                            {skills.map((skill) => (
+                                              <option key={skill.id} value={skill.id}>
+                                                {skill.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="col-md-3">
+                                          <label className="form-label">Proficiency</label>
+                                          <input
+                                            className="form-control form-control-sm"
+                                            type="number"
+                                            min={1}
+                                            max={5}
+                                            value={editAgentSkillProficiency}
+                                            onChange={(event) => setEditAgentSkillProficiency(Number(event.target.value))}
+                                          />
+                                        </div>
+                                        <div className="col-md-4">
+                                          <button className="btn btn-sm btn-outline-primary" type="button" onClick={addEditAgentSkill}>
+                                            Add Skill
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </Fragment>
+                              ) : (
+                                <tr key={agent.id}>
+                                  <td>{agent.full_name}</td>
+                                  <td>{agent.email}</td>
+                                  <td>{officeNameById[agent.office_id] || agent.office_id}</td>
+                                  <td>{agent.weekly_max_hours}</td>
+                                  <td>
+                                    {agent.skills?.length ? (
+                                      agent.skills.map((skill) => (
+                                        <span key={`${agent.id}-${skill.skill_id}`} className="ccs-skill-badge">
+                                          {(skillNameById[skill.skill_id] || skill.skill_id) + ` P${skill.proficiency}`}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="ccs-muted">No skills</span>
+                                    )}
+                                  </td>
+                                  <td>{agent.shift_preference}</td>
+                                  <td>
+                                    <div className="d-flex gap-2">
+                                      <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => startAgentEdit(agent)}>
+                                        Edit
+                                      </button>
+                                      <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => void deleteAgent(agent)}>
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ),
+                            )}
                           </tbody>
                         </table>
                       </div>

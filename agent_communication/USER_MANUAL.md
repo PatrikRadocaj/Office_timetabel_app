@@ -166,9 +166,9 @@ Sample data is located in:
 Admins can manage:
 
 - Admin summary metrics and coverage gaps
-- Offices
-- Skills
-- Agents
+- Offices, including create, edit, and delete
+- Skills, including create, edit, and delete
+- Agents, including create, edit, delete, and skill assignment changes
 - Demand forecasts
 - CSV demand uploads
 - Schedule generation
@@ -186,6 +186,15 @@ Agents should see their own dashboard data and should not have access to admin-o
 Admins can open the admin area from the dashboard using the Admin Panel button, or by opening `/admin` directly. Non-admin users are redirected away from `/admin`.
 
 ## Common Workflows
+
+### Manage Offices, Skills, And Agents
+
+1. Log in as admin.
+2. Open the admin area.
+3. Use the create forms to add new offices, skills, or agents.
+4. In Data Preview, use Edit to change an existing office, skill, or agent inline.
+5. Use Delete to remove an item after confirming the browser prompt.
+6. If the backend rejects an update or delete, review the alert banner for the exact error.
 
 ### Add Demand Forecasts
 

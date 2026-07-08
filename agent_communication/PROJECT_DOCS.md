@@ -88,6 +88,7 @@ C:\Users\User\Desktop\web projekt\
 | ARCH-001 | Decide primary frontend path | Done | User | React/Vite is the only frontend; legacy vanilla frontend removed |
 | ARCH-002 | Remove legacy vanilla frontend wiring | Done | Codex | Backend now serves React build when present; Vite is dev UI |
 | FEAT-002 | Expose admin summary and schedule generation in React | Done | Codex | Admin page now loads dashboard summary, generates schedules, and displays assignment coverage results |
+| FEAT-003 | Add edit/delete UI for admin catalog data | Done | Codex | Admin data preview now supports inline edit and confirmed delete for offices, skills, and agents |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
 | DEV-001 | Audit current dirty worktree before development | Proposed | Codex/Claude | Local modified files and runtime logs exist as of 2026-07-08 |
 
