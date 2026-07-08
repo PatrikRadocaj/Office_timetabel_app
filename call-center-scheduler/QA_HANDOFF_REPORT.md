@@ -3,13 +3,14 @@
 ## Project
 - Name: Call Center Scheduler (school/university project)
 - Root: `C:\Users\User\Desktop\web projekt\call-center-scheduler`
-- Frontend: Vanilla HTML/CSS/JS + Bootstrap 5
+- Frontend: React/Vite/TypeScript + Bootstrap 5 (`C:\Users\User\Desktop\web projekt\react-app`)
 - Backend: FastAPI (Python)
 - Auth/DB: Firebase Auth + Firestore
 
 ## Current Status
 - Backend was started and health endpoint returned `{"status":"ok"}`.
-- Main app URL: `http://localhost:8000/`
+- Main development app URL: `http://localhost:5173/`
+- Backend/API URL: `http://localhost:8000/`
 - API docs: `http://localhost:8000/docs`
 - Health: `http://localhost:8000/api/health`
 
@@ -24,10 +25,14 @@
 1. Ensure backend is running:
    - `cd backend`
    - `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`
-2. Ensure Firebase is reachable and configured:
+2. Ensure React frontend is running:
+   - `cd ..\..\react-app`
+   - `npm install`
+   - `npm run dev`
+3. Ensure Firebase is reachable and configured:
    - `backend/.env`
    - `backend/service-account.json`
-3. Optional seed:
+4. Optional seed:
    - `python scripts\seed_firestore.py`
 
 ## Test Data Notes

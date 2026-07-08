@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -43,10 +43,15 @@ app.include_router(schedules.router, prefix=settings.api_v1_prefix)
 app.include_router(dashboard.router, prefix=settings.api_v1_prefix)
 app.include_router(me.router, prefix=settings.api_v1_prefix)
 
-frontend_dir = Path(__file__).resolve().parents[2] / "frontend"
+react_dist_candidates = [
+    Path(__file__).resolve().parents[3] / "react-app" / "dist",
+    Path(__file__).resolve().parents[2] / "react-app" / "dist",
+]
+react_dist_dir = next((candidate for candidate in react_dist_candidates if candidate.exists()), react_dist_candidates[0])
+react_assets_dir = react_dist_dir / "assets"
 
-if frontend_dir.exists():
-    app.mount("/assets", StaticFiles(directory=frontend_dir), name="assets")
+if react_assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory=react_assets_dir), name="react-assets")
 
 
 @app.exception_handler(DependencyUnavailableError)
@@ -67,14 +72,27 @@ def health() -> dict[str, str]:
 
 @app.get("/")
 def serve_index() -> FileResponse:
-    return FileResponse(frontend_dir / "index.html")
+    return serve_react_app()
 
 
 @app.get("/dashboard")
 def serve_dashboard() -> FileResponse:
-    return FileResponse(frontend_dir / "dashboard.html")
+    return serve_react_app()
 
 
 @app.get("/admin")
 def serve_admin() -> FileResponse:
-    return FileResponse(frontend_dir / "admin.html")
+    return serve_react_app()
+
+
+def serve_react_app() -> FileResponse:
+    index_file = react_dist_dir / "index.html"
+    if not index_file.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "React frontend build not found. Run `npm run build` in react-app "
+                "or use the Vite dev server at http://localhost:5173."
+            ),
+        )
+    return FileResponse(index_file)

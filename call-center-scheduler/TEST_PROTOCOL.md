@@ -3,6 +3,10 @@
 ## Purpose
 This protocol ensures no test scenario is lost across future development cycles for the Call Center Scheduler project.
 
+## Current Frontend Scope
+The accepted frontend is the React/Vite/TypeScript app in `C:\Users\User\Desktop\web projekt\react-app`.
+Older ledger entries that reference `frontend/*.html` or vanilla JavaScript files are historical evidence only.
+
 ## Source of Truth
 - Primary: `QA_HANDOFF_REPORT.md`
 - Secondary: latest QM update report (currently `QM_UPDATE_REPORT_2026-05-09.md`)

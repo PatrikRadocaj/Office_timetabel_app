@@ -3,7 +3,7 @@
 Professional scheduler web app for a 24/7/365 multi-office call center.
 
 Stack:
-- Frontend: Vanilla HTML + CSS + JavaScript + Bootstrap 5
+- Frontend: React + Vite + TypeScript + Bootstrap 5 + Chart.js
 - Backend: Python FastAPI
 - Auth/DB: Firebase Authentication + Firestore
 - Integration: JSON REST API (`/api/v1/...`)
@@ -11,70 +11,40 @@ Stack:
 ## 1) Project Structure
 
 ```text
-call-center-scheduler/
-  backend/
-    .env.example
-    Dockerfile
-    requirements.txt
-    app/
-      main.py
-      api/
-        deps.py
-        routers/
-          auth.py
-          offices.py
-          skills.py
-          agents.py
-          demand.py
-          schedules.py
-          dashboard.py
-      core/
-        config.py
-        firebase.py
-      models/
-        common.py
-        auth.py
-        office.py
-        skill.py
-        agent.py
-        demand.py
-        schedule.py
-      repositories/
-        firestore_repository.py
-        users_repository.py
-        offices_repository.py
-        skills_repository.py
-        agents_repository.py
-        demand_repository.py
-        schedules_repository.py
-      services/
-        auth_service.py
-        catalog_service.py
-        scheduler_service.py
-        dashboard_service.py
-  frontend/
+web projekt/
+  react-app/
     index.html
-    dashboard.html
-    admin.html
-    css/styles.css
-    js/
-      api.js
-      auth.js
-      ui.js
-      index-page.js
-      dashboard-page.js
-      admin-page.js
-  sample_data/
-    users.json
-    offices.json
-    skills.json
-    agents.json
-    demand_forecasts.json
-    demand_upload_template.csv
-  scripts/
-    seed_firestore.py
-  docker-compose.yml
-  .gitignore
+    package.json
+    vite.config.ts
+    src/
+      App.tsx
+      pages/
+      components/
+      lib/
+      routes/
+  call-center-scheduler/
+    backend/
+      .env.example
+      Dockerfile
+      requirements.txt
+      app/
+        main.py
+        api/
+        core/
+        models/
+        repositories/
+        services/
+      tests/
+    sample_data/
+      users.json
+      offices.json
+      skills.json
+      agents.json
+      demand_forecasts.json
+      demand_upload_template.csv
+    scripts/
+      seed_firestore.py
+    docker-compose.yml
 ```
 
 ## 2) Firebase Setup
@@ -103,7 +73,7 @@ Example:
 APP_NAME=Call Center Scheduler API
 API_V1_PREFIX=/api/v1
 ENVIRONMENT=development
-CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173,http://127.0.0.1:5173
 
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_WEB_API_KEY=your-web-api-key
@@ -125,11 +95,37 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Open:
-- App UI: `http://localhost:8000/`
+- API server: `http://localhost:8000/`
 - API docs: `http://localhost:8000/docs`
 - Health: `http://localhost:8000/api/health`
 
-## 4) Seed Sample Data
+## 4) Frontend Setup (React)
+
+From the workspace root:
+
+```powershell
+cd ..\react-app
+npm install
+npm run dev
+```
+
+Open:
+
+- React app: `http://localhost:5173/`
+- Backend API: `http://localhost:8000/`
+
+The Vite dev server proxies `/api` to `http://127.0.0.1:8000`.
+
+For a production-style local build:
+
+```powershell
+cd ..\react-app
+npm run build
+```
+
+After a React build exists, FastAPI can serve the compiled React app from `http://localhost:8000/`.
+
+## 5) Seed Sample Data
 
 From project root:
 
@@ -146,15 +142,15 @@ This seeds collections:
 
 Note: `users.json` documents are profile docs only. They are **not** Firebase Auth accounts.
 
-## 5) First Admin User
+## 6) First Admin User
 
-1. Open `http://localhost:8000/` and register a user.
+1. Open `http://localhost:5173/` and register a user.
 2. In Firestore console, open `users` collection.
 3. Find the new user document (doc ID = Firebase UID) and set:
    - `role: "admin"`
 4. Log in again. You can now use `/admin`.
 
-## 6) Docker Run
+## 7) Docker Run
 
 Create `backend/.env` first, then:
 
@@ -164,7 +160,9 @@ docker compose up --build
 
 App runs at `http://localhost:8000/`.
 
-## 7) Main Features
+Docker builds the React frontend and serves the compiled app through FastAPI.
+
+## 8) Main Features
 
 - Register/Login/Logout with Firebase Auth through backend API
 - Client + server validation
@@ -182,7 +180,7 @@ App runs at `http://localhost:8000/`.
   - Shift preference scoring
 - Dashboard metrics + gap-highlighted coverage table
 
-## 8) Key API Endpoints
+## 9) Key API Endpoints
 
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
@@ -198,4 +196,3 @@ App runs at `http://localhost:8000/`.
 - `POST /api/v1/demand-forecasts/upload-csv` (admin)
 - `POST /api/v1/schedules/generate` (admin)
 - `GET /api/v1/dashboard/summary`
-
