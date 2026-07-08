@@ -4,6 +4,40 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 
 ## Status Update
 - Agent: Claude
+- Task ID: SCHED-001 scheduler office-local availability fix + FEAT-004 closeout
+- Timestamp: 2026-07-08
+- Current state: Done. All three FEAT-004 review findings fixed (none backlogged); FEAT-004 and the scheduler fix committed as scoped commits.
+- Completed:
+  - Fixed finding 1 (High): `SchedulerService` now resolves each agent's office timezone once per generation (`office_timezones` map built in `generate()` from the offices dict) and `_agent_is_available` converts the slot to that timezone before matching `weekday`/hours, so availability windows are truly office-local. `_shift_preference_penalty` now also receives the office-local hour, so day/night preference (7-19) is office-local too.
+  - Fixed finding 2 (Low): `slot_end_hour` is now derived as `slot_start_hour + duration`, so a slot ending at local midnight reads as 24.0 instead of 0.0 and no longer matches every window.
+  - Fixed finding 3 (Low): backend `TimeWindow` now enforces `day_of_week` 0-6, `start_hour` 0-23, `end_hour` 1-24, and `start_hour < end_hour` via pydantic, mirroring the React UI validation.
+  - Extracted `DemandService._resolve_office_timezone` into a shared helper `app/core/timezones.py::resolve_office_timezone`; `DemandService` delegates to it, so demand expansion and the scheduler share one timezone resolution path.
+  - Added `backend/tests/test_scheduler_availability.py`: Europe/Berlin agent with Mon 09-17 window is available for local Mon 10:00 (08:00 UTC) and not for local Mon 08:00; midnight-adjacent slot matches local Monday not UTC Sunday; midnight-ending slot rejects an early window and accepts a 16-24 window; empty availability stays always-available; `_rank_eligible_agents` plumbing test; TimeWindow validation accept/reject cases.
+  - Updated docs: D-20260708-008 rationale corrected (scheduler previously matched in UTC); new decision D-20260708-009 records that availability and shift preference are evaluated in the AGENT'S office timezone; SCHED-001 task row added; USER_MANUAL schedule-generation section now states windows are evaluated in the agent's office local timezone.
+- Decisions made:
+  - Used the AGENT'S office timezone rather than the demand row's office timezone. The scheduler does not restrict agents to their own office's demand, and availability is an agent-level, agent-office-local contract; for same-office assignments (the normal case) the two are identical. Recorded as D-20260708-009.
+- Commit hashes (branch `codex/invalid-token-redirect`):
+  - FEAT-004 frontend/docs (Codex's approved work): `600fe023aa0b953331f757d6e9ff6a57a7ec7b9f`
+  - SCHED-001 scheduler fix + tests + docs: `0ea5a553f1e2d1667bf594fb95007b596e79b65b`
+  - Excluded from both commits: `runtime_logs/**`, untracked seed scripts (`populate_current_week_idnow_demand.py`, `reset_idnow_demo_firestore.py` — still pending user decision), and the line-ending-only `react-app/vite.config.ts` marker.
+- Files touched:
+  - `call-center-scheduler/backend/app/core/timezones.py` (new)
+  - `call-center-scheduler/backend/app/services/scheduler_service.py`
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/app/models/common.py`
+  - `call-center-scheduler/backend/tests/test_scheduler_availability.py` (new)
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 23 passed (9 existing + 14 new)
+  - No Firestore operations run (quota constraint respected); no React build needed (no frontend changes in SCHED-001).
+- Fixed vs backlogged: findings 1, 2, and 3 all fixed; nothing backlogged. Finding 4 (duplicate/overlapping windows accepted) remains an acknowledged non-issue under OR-matching semantics.
+- Open issues: none for this task. Note for API consumers: TimeWindow validation means previously storable out-of-range windows (e.g. `day_of_week: 99`) are now rejected with 422; existing stored agents are unaffected until edited.
+- Next step: user runs the post-quota smoke — generate a schedule for a Munich office with a 9-17 windowed agent and verify assignments land 09:00-17:00 LOCAL.
+
+## Status Update
+- Agent: Claude
 - Task ID: FEAT-004 (review)
 - Timestamp: 2026-07-08
 - Current state: Review complete. Verdict: CHANGES REQUESTED — the React implementation itself is solid (no frontend changes needed), but the feature's documented contract does not match runtime scheduler behavior, and that mismatch silently mis-schedules availability-restricted agents in every non-UTC office. One backend function needs fixing (or the contract needs re-documenting) before availability windows can be trusted.
