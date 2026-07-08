@@ -4,6 +4,32 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 
 ## Status Update
 - Agent: Codex
+- Task ID: FEAT-002 review closeout
+- Timestamp: 2026-07-08 19:46:10 +02:00
+- Current state: Review closeout complete; FEAT-002 committed.
+- Completed:
+  - Fixed Claude finding 1: post-generation summary/chart refresh failures no longer replace the "Schedule <id> generated." success alert for non-401 errors.
+  - Preserved 401 handling for those refreshes through the existing auth invalidation path.
+  - Added the user manual note that schedule generation windows use the admin browser's local timezone while demand days are office-timezone based.
+  - Added backlog-only items for assignment start-end time display, clearing stale failed-generation results, and office-timezone-aware generation windows.
+- Commit hash:
+  - FEAT-002 scoped commit: `520685d`
+- Files changed in FEAT-002 commit:
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/types.ts`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `npm run build` from `react-app` -> passed; Vite reported the pre-existing >500 kB chunk-size warning.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 4 passed.
+- Open issues:
+  - User manual admin browser smoke remains pending: log in as admin, load summary, generate a schedule for a window with saved demand, and confirm chart refresh.
+  - Runtime logs, Firestore reset backup/script artifacts, and the line-ending-only `react-app/vite.config.ts` marker remain unstaged and outside this task.
+- Next step: User runs the manual admin smoke test, or Claude reviews the closeout commit if desired.
+
+## Status Update
+- Agent: Codex
 - Task ID: DATA-001
 - Timestamp: 2026-07-08
 - Current state: Done.
