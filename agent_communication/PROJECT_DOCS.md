@@ -87,6 +87,7 @@ C:\Users\User\Desktop\web projekt\
 | DOC-001 | Establish shared Codex + Claude protocol | In Review | Codex | Awaiting user approval |
 | ARCH-001 | Decide primary frontend path | Done | User | React/Vite is the only frontend; legacy vanilla frontend removed |
 | ARCH-002 | Remove legacy vanilla frontend wiring | Done | Codex | Backend now serves React build when present; Vite is dev UI |
+| FEAT-002 | Expose admin summary and schedule generation in React | Done | Codex | Admin page now loads dashboard summary, generates schedules, and displays assignment coverage results |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
 | DEV-001 | Audit current dirty worktree before development | Proposed | Codex/Claude | Local modified files and runtime logs exist as of 2026-07-08 |
 
@@ -125,8 +126,11 @@ C:\Users\User\Desktop\web projekt\
 8. Consider admin-specific dashboard copy for admins with no agent profile; the current generic dashboard says "You have a day off today" and shows an empty shift card.
 9. Treat `403` "User is disabled" and `404` "User profile not found" from `get_current_user` as frontend session-ending responses, like `401`, so deactivated/deleted users do not stay in a protected shell with a stale token.
 10. Harden React session callback identity by wrapping `syncSession` in `useCallback` in `react-app/src/App.tsx`; optionally add an `active` cancellation guard to `AdminPage` initialization for consistency with `DashboardPage`.
-11. Update the task board with the first approved development task.
-12. Keep the user manual current as features stabilize.
+11. Show the start-end range in the schedule assignment table's Time column.
+12. Clear stale `scheduleResult` when a new schedule generation attempt fails.
+13. Add office-timezone-aware schedule generation windows so admin browser timezone differences do not produce partial office-day windows.
+14. Update the task board with the first approved development task.
+15. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 

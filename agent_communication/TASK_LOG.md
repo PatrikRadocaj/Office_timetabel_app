@@ -4,6 +4,78 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 
 ## Status Update
 - Agent: Codex
+- Task ID: DATA-001
+- Timestamp: 2026-07-08
+- Current state: Done.
+- Completed: Reset Firestore demo data for Firebase project `scheduler-app-54991`; preserved `users`; deleted existing non-user collections; seeded IDnow-inspired offices, skills, and 150 fictional agents.
+- In progress: None.
+- Blockers: None.
+- Files touched:
+  - `call-center-scheduler/scripts/reset_idnow_demo_firestore.py`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python scripts\reset_idnow_demo_firestore.py` -> dry run confirmed 1 user preserved and 5 offices/16 skills/150 agents planned
+  - `python scripts\reset_idnow_demo_firestore.py --execute` -> deleted `demand_forecasts`, `offices`, `skills`; wrote 5 offices, 16 skills, 150 agents
+  - Firestore verification script -> `agents=150`, `offices=5`, `skills=16`, `users=1`
+- Backup: `runtime_logs\firestore-idnow-reset-backup-20260708-174419.json`
+- Next step: Use the seeded data for admin UI and scheduler development; demand forecasts/schedules are intentionally empty after reset.
+
+## Status Update
+- Agent: Claude
+- Task ID: FEAT-002 (review)
+- Timestamp: 2026-07-08
+- Current state: Review complete. Verdict: APPROVED WITH FINDINGS — no blocking issues; manual admin browser smoke remains pending (blocked on a local admin session, same as Codex reported).
+- Completed: Reviewed the AdminPage/types diffs against the backend contracts (`DashboardSummary`, `ScheduleGenerationRequest/Response` in `app/models/schedule.py`), traced the scheduler and demand timezone handling, checked 401-handling regressions, verified existing admin sections are untouched, and checked docs. Ran React build and backend tests.
+- Findings (ordered by severity — none blocking):
+  1. Low — The post-generation "silent" refreshes are not silent on failure: `loadChart({ silent: true })` and `loadAdminSummary()` errors route through `handleApiError`, which REPLACES the "Schedule <id> generated." success alert with a danger alert (e.g. "Failed to load chart"). A successful generation can therefore present as a failure. Suggested fix direction: swallow (or log-only) non-401 errors from the silent refreshes, or keep the success alert and surface refresh failures separately.
+  2. Low — Timezone semantics: the generation window is interpreted in the ADMIN'S BROWSER timezone (`datetime-local` → `toISOString()`), while daily demand slots are built in each OFFICE'S timezone (`catalog_service` combines the date in office tz, stores UTC). These align when the admin's browser tz equals the office tz (current usage), but for an office in another timezone the default midnight-to-midnight window will not match that office's demand day. Backend `_as_utc` normalizes everything, so there is no crash — just possible partial windows. Suggest a one-line USER_MANUAL note now; office-tz-aware windowing is a future enhancement.
+  3. Info — Assignment table's "Time" column shows only `slot_start`; showing the start–end range would be clearer. UX nit.
+  4. Info — If generation fails, the previous `scheduleResult` stays visible beneath the error alert (stale result). Acceptable; nit.
+  5. Info — Branch hygiene: FEAT-002 was developed on the `codex/invalid-token-redirect` branch working tree. Commit FEAT-002 as its own scoped commit (or branch) so history stays reviewable.
+  6. Info (positive) — The init effect now skips non-admin users (`user?.role !== "admin"` guard), eliminating the previous doomed-to-403 API burst while the role-guard redirect ran. Nice hardening beyond scope.
+- Review-goal confirmations:
+  1. Admin Summary matches `DashboardSummary`: confirmed — `types.ts` mirrors the Pydantic model field-for-field; required/assigned/gap/ratio aggregates are computed client-side from `coverage_points` (the backend sends no aggregates), with a divide-by-zero guard on the ratio.
+  2. Request matches `ScheduleGenerationRequest`: confirmed — `{ start_at, end_at }` as ISO strings; frontend validates parseability and end > start (backend re-validates too).
+  3. Result UI matches `ScheduleGenerationResponse`: confirmed — schedule_id/total_required/total_assigned/uncovered_demand shown; per-row assigned count correctly derived from `assigned_agent_ids.length` (no `assigned` field exists per row); office/skill ids mapped to names with id fallback.
+  4. 401 handling not regressed: confirmed — `loadAdminSummary`, `generateSchedule`, and the silent chart refresh all route through `handleApiError` → `handleUnauthorized`; `sessionInvalid` null-render still intact.
+  5. Existing sections not broken: confirmed — diff is additive; `loadChart(options = {})` signature change is backward-compatible with all existing zero-arg call sites; summary refresh joins existing `Promise.all`s after create actions; demand builder, CSV upload, preview untouched.
+  6. Loading/empty/error states: present — summary has loading/data/unavailable branches plus a no-coverage-points message; generation has a disabled-while-loading button, a pre-result hint, and a no-assignment-rows message; backend 400s ("No demand rows for selected window") surface via the error alert.
+  7. Docs and task log accurate: confirmed — PROJECT_DOCS gained the FEAT-002 task row; USER_MANUAL's schedule-generation workflow matches the new UI; files-touched matches `git status` (`vite.config.ts` diff is line-endings only, correctly declared out of scope).
+- Commands/tests run:
+  - `npm run build` (react-app) -> passed (tsc + vite; pre-existing >500 kB chunk-size warning, cosmetic)
+  - `python -m pytest backend/tests` -> 4 passed
+- Manual smoke status: NOT RUN — same blocker as Codex (no valid local admin session in the browser). Still needed: log in as admin, confirm summary loads, generate a schedule for a window with saved demand, confirm results and silent chart refresh.
+- Recommended next step: Codex commits FEAT-002 as a scoped commit, applies or backlogs finding 1 (success-alert clobbering) and the finding 2 manual note; user runs the admin-session smoke test.
+
+## Status Update
+- Agent: Codex
+- Task ID: FEAT-002 admin schedule summary UI
+- Timestamp: 2026-07-08 19:33:43 +02:00
+- Current state: Implementation complete; automated verification passed; browser smoke is blocked by missing local admin session.
+- Completed:
+  - Added React Admin Summary UI that loads `GET /api/v1/dashboard/summary` on admin page load and displays total agents, offices, skills, active schedules, coverage points, required, assigned, gap, and aggregate coverage ratio.
+  - Added React Schedule Generation UI with start/end datetime inputs, a Generate button for `POST /api/v1/schedules/generate`, result counters, and assignment rows showing office, skill, time, required, assigned, gap, and coverage ratio.
+  - Refreshed admin summary after office/skill/agent changes and after schedule generation; refreshed the existing demand coverage graph silently after generation when graph filters are present.
+  - Preserved existing demand builder, CSV upload, data preview, and demand graph behavior.
+  - Updated `PROJECT_DOCS.md` and `USER_MANUAL.md`.
+- Files touched:
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/types.ts`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `npm run build` from `react-app` -> passed
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 4 passed
+  - Local server checks: `http://127.0.0.1:5173/` -> 200; `http://127.0.0.1:8000/api/health` -> 200
+  - Browser auth check: opening `http://127.0.0.1:5173/admin` redirected to login because there is no valid admin session in the browser.
+- Open issues:
+  - Manual smoke "open admin, load summary, generate schedule for a date range with demand" still needs to be run after the user signs in locally with an admin account.
+  - Pre-existing runtime log changes, `runtime_logs/**`, and `react-app/vite.config.ts` remain outside this task scope and were not modified intentionally.
+- Next step: Claude/user review the React admin UI; then run the admin-session smoke test with valid local credentials.
+
+## Status Update
+- Agent: Codex
 - Task ID: AUTH-INVALID-TOKEN-REDIRECT closeout
 - Timestamp: 2026-07-08
 - Current state: Closeout complete.

@@ -83,6 +83,42 @@ export interface DemandDayView {
   coverage_generated_at: string | null;
 }
 
+export interface CoveragePoint {
+  slot_start: string;
+  office_id: string;
+  skill_id: string;
+  required: number;
+  assigned: number;
+  gap: number;
+}
+
+export interface DashboardSummary {
+  total_agents: number;
+  total_offices: number;
+  total_skills: number;
+  active_schedule_count: number;
+  coverage_points: CoveragePoint[];
+}
+
+export interface ScheduleAssignment {
+  slot_start: string;
+  slot_end: string;
+  office_id: string;
+  skill_id: string;
+  assigned_agent_ids: string[];
+  required_agents: number;
+  coverage_ratio: number;
+  gap: number;
+}
+
+export interface ScheduleGenerationResponse {
+  schedule_id: string;
+  assignments: ScheduleAssignment[];
+  total_required: number;
+  total_assigned: number;
+  uncovered_demand: number;
+}
+
 export interface AgentDashboardData {
   full_name: string;
   today_date: string;

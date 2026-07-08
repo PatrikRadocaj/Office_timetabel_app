@@ -15,9 +15,11 @@ import {
 } from "../lib/format";
 import type {
   Agent,
+  DashboardSummary,
   DemandDayView,
   DemandRow,
   Office,
+  ScheduleGenerationResponse,
   Skill,
   UserProfile,
 } from "../types";
@@ -44,6 +46,26 @@ interface DemandGridState {
 }
 
 const chartColors = ["#0d6efd", "#198754", "#dc3545", "#fd7e14", "#6f42c1", "#20c997", "#6c757d", "#0dcaf0"];
+
+const toDateTimeLocalValue = (value: Date): string => {
+  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+const defaultScheduleStart = (): string => {
+  const value = new Date();
+  value.setHours(0, 0, 0, 0);
+  return toDateTimeLocalValue(value);
+};
+
+const defaultScheduleEnd = (): string => {
+  const value = new Date();
+  value.setHours(0, 0, 0, 0);
+  value.setDate(value.getDate() + 1);
+  return toDateTimeLocalValue(value);
+};
+
+const formatPercent = (value: number): string => `${Math.round(Number(value || 0) * 100)}%`;
 
 export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const navigate = useNavigate();
@@ -90,9 +112,30 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [chartInterval, setChartInterval] = useState<30 | 60>(30);
   const [chartSkillFilter, setChartSkillFilter] = useState("all");
   const [latestDayView, setLatestDayView] = useState<DemandDayView | null>(null);
+  const [adminSummary, setAdminSummary] = useState<DashboardSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [scheduleStart, setScheduleStart] = useState(defaultScheduleStart);
+  const [scheduleEnd, setScheduleEnd] = useState(defaultScheduleEnd);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleResult, setScheduleResult] = useState<ScheduleGenerationResponse | null>(null);
   const [sessionInvalid, setSessionInvalid] = useState(false);
 
+  const officeNameById = useMemo(() => Object.fromEntries(offices.map((office) => [office.id, office.name])), [offices]);
   const skillNameById = useMemo(() => Object.fromEntries(skills.map((skill) => [skill.id, skill.name])), [skills]);
+  const coverageSummary = useMemo(() => {
+    const points = adminSummary?.coverage_points ?? [];
+    const totalRequired = points.reduce((sum, point) => sum + Number(point.required || 0), 0);
+    const totalAssigned = points.reduce((sum, point) => sum + Number(point.assigned || 0), 0);
+    const totalGap = points.reduce((sum, point) => sum + Number(point.gap || 0), 0);
+
+    return {
+      pointCount: points.length,
+      totalRequired,
+      totalAssigned,
+      totalGap,
+      coverageRatio: totalRequired > 0 ? totalAssigned / totalRequired : 0,
+    };
+  }, [adminSummary]);
 
   const handleUnauthorized = useCallback(() => {
     setSessionInvalid(true);
@@ -112,6 +155,21 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     [handleUnauthorized],
   );
 
+  const loadAdminSummary = useCallback(async (options: { preserveAlert?: boolean } = {}) => {
+    setSummaryLoading(true);
+    try {
+      const summary = await apiRequest<DashboardSummary>("/dashboard/summary");
+      setAdminSummary(summary);
+    } catch (error) {
+      if (options.preserveAlert && !isUnauthorizedError(error)) {
+        return;
+      }
+      handleApiError(error, "Failed to load admin summary");
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [handleApiError]);
+
   useEffect(() => {
     if (user?.role !== "admin") {
       navigate("/dashboard", { replace: true });
@@ -119,6 +177,10 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   }, [navigate, user]);
 
   useEffect(() => {
+    if (user?.role !== "admin") {
+      return;
+    }
+
     const init = async () => {
       try {
         const [officeRows, skillRows] = await Promise.all([
@@ -151,7 +213,15 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     };
 
     void init();
-  }, [handleApiError]);
+  }, [handleApiError, user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== "admin") {
+      return;
+    }
+
+    void loadAdminSummary();
+  }, [loadAdminSummary, user?.role]);
 
   useEffect(() => {
     if (!latestDayView || !chartCanvasRef.current) {
@@ -335,7 +405,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setOfficeCapacity("");
       setOfficeAddress("");
       setAlert({ type: "success", message: "Office created successfully." });
-      await reloadOffices();
+      await Promise.all([reloadOffices(), loadAdminSummary()]);
     } catch (error) {
       handleApiError(error, "Failed to create office");
     }
@@ -364,7 +434,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setSkillDescription("");
       setSkillMinProficiency(1);
       setAlert({ type: "success", message: "Skill created successfully." });
-      await Promise.all([reloadSkills(), reloadAgents()]);
+      await Promise.all([reloadSkills(), reloadAgents(), loadAdminSummary()]);
     } catch (error) {
       handleApiError(error, "Failed to create skill");
     }
@@ -404,7 +474,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       setAgentShiftPref("any");
       setPendingSkills([]);
       setAlert({ type: "success", message: "Agent created successfully." });
-      await reloadAgents();
+      await Promise.all([reloadAgents(), loadAdminSummary()]);
     } catch (error) {
       handleApiError(error, "Failed to create agent");
     }
@@ -566,8 +636,10 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     }
   };
 
-  const loadChart = async () => {
-    clearAdminAlert();
+  const loadChart = async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) {
+      clearAdminAlert();
+    }
 
     try {
       requireValue(chartOfficeId, "Chart office");
@@ -580,14 +652,59 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
         setChartSkillFilter("all");
       }
 
-      if (!dayView.coverage_schedule_id) {
+      if (!options.silent && !dayView.coverage_schedule_id) {
         setAlert({
           type: "warning",
           message: "No generated schedule found for selected office/day/interval. Coverage line is currently 0.",
         });
       }
     } catch (error) {
+      if (options.silent && !isUnauthorizedError(error)) {
+        return;
+      }
       handleApiError(error, "Failed to load chart");
+    }
+  };
+
+  const generateSchedule = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearAdminAlert();
+
+    try {
+      requireValue(scheduleStart, "Schedule start");
+      requireValue(scheduleEnd, "Schedule end");
+
+      const start = new Date(scheduleStart);
+      const end = new Date(scheduleEnd);
+
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        throw new Error("Enter a valid schedule window.");
+      }
+      if (end <= start) {
+        throw new Error("Schedule end must be after schedule start.");
+      }
+
+      setScheduleLoading(true);
+      const result = await apiRequest<ScheduleGenerationResponse>("/schedules/generate", {
+        method: "POST",
+        body: {
+          start_at: start.toISOString(),
+          end_at: end.toISOString(),
+        },
+      });
+
+      setScheduleResult(result);
+      setAlert({ type: "success", message: `Schedule ${result.schedule_id} generated.` });
+
+      const refreshes: Array<Promise<unknown>> = [loadAdminSummary({ preserveAlert: true })];
+      if (chartOfficeId && chartDate) {
+        refreshes.push(loadChart({ silent: true }));
+      }
+      await Promise.all(refreshes);
+    } catch (error) {
+      handleApiError(error, "Failed to generate schedule");
+    } finally {
+      setScheduleLoading(false);
     }
   };
 
@@ -623,6 +740,178 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
       <main className="container-fluid py-4 px-3 px-md-4">
         {alert && <AlertBanner type={alert.type} message={alert.message} onClose={clearAdminAlert} />}
+
+        <div className="row g-4 mb-4">
+          <div className="col-12 col-xxl-5">
+            <div className="card ccs-card h-100">
+              <div className="card-header d-flex justify-content-between align-items-center gap-2">
+                <h6 className="mb-0">Admin Summary</h6>
+                <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => void loadAdminSummary()} disabled={summaryLoading}>
+                  Refresh
+                </button>
+              </div>
+              <div className="card-body">
+                {summaryLoading ? (
+                  <p className="ccs-muted mb-0">Loading summary...</p>
+                ) : adminSummary ? (
+                  <>
+                    <div className="row g-3">
+                      <div className="col-6 col-md-3 col-xxl-6">
+                        <div className="border rounded p-3 h-100">
+                          <div className="small ccs-muted">Agents</div>
+                          <div className="fs-4 fw-semibold">{adminSummary.total_agents}</div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3 col-xxl-6">
+                        <div className="border rounded p-3 h-100">
+                          <div className="small ccs-muted">Offices</div>
+                          <div className="fs-4 fw-semibold">{adminSummary.total_offices}</div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3 col-xxl-6">
+                        <div className="border rounded p-3 h-100">
+                          <div className="small ccs-muted">Skills</div>
+                          <div className="fs-4 fw-semibold">{adminSummary.total_skills}</div>
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3 col-xxl-6">
+                        <div className="border rounded p-3 h-100">
+                          <div className="small ccs-muted">Active schedules</div>
+                          <div className="fs-4 fw-semibold">{adminSummary.active_schedule_count}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <hr className="my-4" />
+                    {coverageSummary.pointCount ? (
+                      <div className="row g-3">
+                        <div className="col-6 col-md">
+                          <div className="small ccs-muted">Coverage points</div>
+                          <div className="fw-semibold">{coverageSummary.pointCount}</div>
+                        </div>
+                        <div className="col-6 col-md">
+                          <div className="small ccs-muted">Required</div>
+                          <div className="fw-semibold">{coverageSummary.totalRequired}</div>
+                        </div>
+                        <div className="col-6 col-md">
+                          <div className="small ccs-muted">Assigned</div>
+                          <div className="fw-semibold">{coverageSummary.totalAssigned}</div>
+                        </div>
+                        <div className="col-6 col-md">
+                          <div className="small ccs-muted">Gap</div>
+                          <div className="fw-semibold">{coverageSummary.totalGap}</div>
+                        </div>
+                        <div className="col-6 col-md">
+                          <div className="small ccs-muted">Coverage</div>
+                          <div className="fw-semibold">{formatPercent(coverageSummary.coverageRatio)}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="ccs-muted mb-0">No schedule coverage points available yet.</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="ccs-muted mb-0">Summary unavailable.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="col-12 col-xxl-7">
+            <div className="card ccs-card h-100">
+              <div className="card-header">
+                <h6 className="mb-0">Schedule Generation</h6>
+              </div>
+              <div className="card-body">
+                <form className="row g-3 align-items-end" onSubmit={generateSchedule}>
+                  <div className="col-md-5">
+                    <label className="form-label">Start</label>
+                    <input
+                      className="form-control"
+                      type="datetime-local"
+                      value={scheduleStart}
+                      onChange={(event) => setScheduleStart(event.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-5">
+                    <label className="form-label">End</label>
+                    <input
+                      className="form-control"
+                      type="datetime-local"
+                      value={scheduleEnd}
+                      onChange={(event) => setScheduleEnd(event.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-2 d-grid">
+                    <button className="btn btn-primary" type="submit" disabled={scheduleLoading}>
+                      {scheduleLoading ? "Generating..." : "Generate"}
+                    </button>
+                  </div>
+                </form>
+
+                {scheduleResult ? (
+                  <div className="mt-4">
+                    <div className="row g-3 mb-3">
+                      <div className="col-6 col-md-3">
+                        <div className="small ccs-muted">Schedule ID</div>
+                        <div className="fw-semibold text-break">{scheduleResult.schedule_id}</div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <div className="small ccs-muted">Required</div>
+                        <div className="fw-semibold">{scheduleResult.total_required}</div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <div className="small ccs-muted">Assigned</div>
+                        <div className="fw-semibold">{scheduleResult.total_assigned}</div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <div className="small ccs-muted">Uncovered</div>
+                        <div className="fw-semibold">{scheduleResult.uncovered_demand}</div>
+                      </div>
+                    </div>
+
+                    <div className="ccs-table-wrap">
+                      {scheduleResult.assignments.length ? (
+                        <table className="table table-sm table-bordered align-middle">
+                          <thead className="table-light">
+                            <tr>
+                              <th>Office</th>
+                              <th>Skill</th>
+                              <th>Time</th>
+                              <th>Required</th>
+                              <th>Assigned</th>
+                              <th>Gap</th>
+                              <th>Coverage</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {scheduleResult.assignments.map((assignment, index) => (
+                              <tr key={`${assignment.office_id}-${assignment.skill_id}-${assignment.slot_start}-${index}`}>
+                                <td>{officeNameById[assignment.office_id] || assignment.office_id}</td>
+                                <td>{skillNameById[assignment.skill_id] || assignment.skill_id}</td>
+                                <td>{formatDateTime(assignment.slot_start)}</td>
+                                <td>{assignment.required_agents}</td>
+                                <td>{assignment.assigned_agent_ids.length}</td>
+                                <td>{assignment.gap}</td>
+                                <td>{formatPercent(assignment.coverage_ratio)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="ccs-muted mb-0">Schedule generated with no assignment rows for this window.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="small ccs-muted mt-3 mb-0">Choose a window with saved demand forecasts, then generate a schedule.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div className="row g-4">
           <div className="col-xl-6">

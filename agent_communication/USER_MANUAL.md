@@ -165,6 +165,7 @@ Sample data is located in:
 
 Admins can manage:
 
+- Admin summary metrics and coverage gaps
 - Offices
 - Skills
 - Agents
@@ -197,9 +198,12 @@ Admins can open the admin area from the dashboard using the Admin Panel button, 
 
 1. Ensure offices, skills, agents, and demand forecasts exist.
 2. Open the schedule generation section.
-3. Select the date/window.
+3. Select the start and end date/time window.
 4. Generate the schedule.
-5. Review assigned, required, and uncovered coverage values.
+5. Review the schedule ID, total required agents, total assigned agents, uncovered demand, and assignment rows.
+6. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
+
+Note: the schedule generation start/end controls use the admin browser's local timezone. Demand days are defined in each office's timezone, so adjust the window when generating schedules for offices in a different timezone.
 
 ## Troubleshooting
 
