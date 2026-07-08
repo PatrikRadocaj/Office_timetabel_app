@@ -4,6 +4,150 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 
 ## Status Update
 - Agent: Codex
+- Task ID: DATA-003 review closeout
+- Timestamp: 2026-07-08 21:20:46 +02:00
+- Current state: Review closeout complete; DATA-003, DATA-004 migration script, and Firestore quota mapping are committed.
+- Completed:
+  - Fixed Claude finding 1 by normalizing scheduler demand grouping keys through `_as_utc(...).isoformat()` for both `slot_start` and `slot_end`.
+  - Added `test_scheduler_grouping.py`, proving a datetime-based compact row and an ISO-string legacy row for the same real slot group together.
+  - Added backlog/doc entries for compact-storage endpoint contract changes, malformed compact-doc hardening, non-replace stacking documentation, and seed/migration schema reuse.
+  - Added a user-manual note that `replace_existing_day=false` writes suffixed compact documents and stacks demand additively.
+  - Committed DATA-003 compact demand storage, DATA-004 migration script, and FIRESTORE-QUOTA-DIAG as scoped commits.
+- Commit hashes:
+  - DATA-003 compact storage and scheduler grouping fix: `8c8524cd03ceb97068718357e7514dc0c9d12a42`
+  - DATA-004 compact migration script: `ee7804c93e282d3e61c907dd8e03022174103bac`
+  - FIRESTORE-QUOTA-DIAG quota error mapping: `d93477db86c27f9228b7da984510b94bb6402a80`
+- Files changed:
+  - `call-center-scheduler/backend/app/models/demand.py`
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/app/services/scheduler_service.py`
+  - `call-center-scheduler/backend/app/repositories/firestore_repository.py`
+  - `call-center-scheduler/backend/tests/test_demand_compact_storage.py`
+  - `call-center-scheduler/backend/tests/test_scheduler_grouping.py`
+  - `call-center-scheduler/scripts/migrate_demand_forecasts_to_compact.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 9 passed.
+  - `npm run build` from `react-app` -> passed; Vite reported the existing >500 kB chunk-size warning.
+  - `python -m py_compile backend\app\services\catalog_service.py backend\app\services\scheduler_service.py scripts\migrate_demand_forecasts_to_compact.py` -> passed.
+  - FastAPI TestClient `GET /api/health` from `call-center-scheduler\backend` -> 200, `{"status": "ok"}`.
+- Firestore operations:
+  - None run during this closeout, per instruction. Post-quota smoke remains with the user.
+- Fixed vs backlogged:
+  - Fixed: mixed legacy/compact scheduler grouping now uses normalized UTC slot keys.
+  - Backlogged: compact-storage contract documentation/template decision; malformed compact-doc expansion hardening; non-replace stacking documentation follow-through; seed/migration script schema reuse.
+- Seed scripts:
+  - `call-center-scheduler/scripts/populate_current_week_idnow_demand.py` and `call-center-scheduler/scripts/reset_idnow_demo_firestore.py` remain uncommitted pending explicit user decision.
+- Open issues:
+  - Runtime logs and Firestore backups under `runtime_logs/**` remain uncommitted.
+  - `react-app/vite.config.ts` still has a line-ending-only local marker outside this task.
+  - Post-quota smoke still needed: save a daily grid, confirm one compact Firestore document, generate a schedule, and check the demand graph.
+- Next step: Claude/user can review the scoped commits; user runs the post-quota smoke after Firestore quota recovers.
+
+## Status Update
+- Agent: Claude
+- Task ID: DATA-003 (review)
+- Timestamp: 2026-07-08
+- Current state: Review complete. Verdict: APPROVED WITH FINDINGS — none blocking. The compact-storage design is correct and well-executed; all nine review goals confirmed. Note: DATA-004 (legacy-slot migration, executed while this review ran) removes the live-data exposure of the two coexistence findings below, so they are recorded as dormant code-level caveats rather than active bugs.
+- Completed: Reviewed demand.py, catalog_service.py (create/create_daily/list/day_view/expansion helpers), scheduler_service.py, firestore_repository.py, the new regression tests, the IDnow seed script, the AdminPage change, and docs. Ran backend tests, React build, and a FastAPI health smoke. No Firestore traffic generated (quota constraint respected).
+- Findings (ordered by severity):
+  1. Low (dormant coexistence bug) — Scheduler slot-grouping key mismatch between legacy and compact rows. `_group_demand_by_slot_and_skill` keys on `str(row["slot_start"])`. Expanded compact rows carry `datetime` objects (str -> "2026-07-13 06:00:00+00:00") while legacy Firestore rows arrive as ISO strings ("2026-07-13T06:00:00+00:00") because `FirestoreRepository._serialize` stringifies datetimes on read. If legacy and compact docs ever coexist for the same real slot, that slot forms two groups, and `used_agents_this_slot`/office-capacity tracking are per group — an agent could be double-booked and capacity overrun. DATA-004 wiped legacy docs so this cannot trigger today, but the expansion layer explicitly advertises legacy compatibility (a restored backup would re-trigger it). Fix direction: normalize the key, e.g. `(_as_utc(row["slot_start"]).isoformat(), _as_utc(row["slot_end"]).isoformat())`.
+  2. Low (dormant migration caveat) — Legacy rows without `forecast_date` are invisible to replace-day cleanup and `day_view` but visible to the scheduler. Rows written by the OLD single-slot create/CSV path had no `forecast_date`; `create_daily(replace_existing_day=True)` deletes only `forecast_date` matches and `day_view` filters on it, while `list()`/scheduler include all slot rows — so such rows would silently diverge graph vs scheduler and survive replaces. Moot after DATA-004; record as a caveat for anyone restoring old backups.
+  3. Low — `POST /demand-forecasts` (single-slot), `/bulk`, and CSV ingest semantics changed without being called out: (a) slot duration must now be exactly 30 or 60 minutes (was: any positive duration) — old CSVs with other durations now get 400; (b) priority is now per skill-per-day — the latest single-slot write overwrites the whole day's priority for that skill (was per slot row); (c) re-posting the same slot now REPLACES the quantity instead of adding an additional demand row (old rows effectively accumulated). All three are sensible under the compact model, but they are contract changes to secondary endpoints and should be noted in docs/backlog.
+  4. Info — `_is_compact_daily_document` treats any doc with a `skill_demands` list as compact; a malformed doc missing `forecast_date`/`interval_minutes` would raise KeyError -> 500 during expansion. Defensive `.get()` + skip would be safer.
+  5. Info — `replace_existing_day=false` writes a random-suffixed document per save, and expansion emits rows from every doc, so repeated non-replace saves stack demand additively for the same office/day/interval. This matches legacy additive behavior and satisfies goal 5 (deterministic doc not overwritten — confirmed), but the stacking behavior is worth a manual note.
+  6. Info — The seed script hand-builds compact documents instead of reusing `DemandService._daily_document_payload` (drift risk if the schema evolves). It does validate payloads through `DailyDemandForecastCreate` and uses the same deterministic ids — good.
+  7. Info — `GET /demand-forecasts` still expands everything into slot rows in memory, so API payload size is unchanged even though Firestore documents dropped ~320x. Codex already recorded this in the task log's open issues — agreed, fine for now.
+- Review-goal confirmations:
+  1. Replace-mode daily save writes ONE compact document with deterministic id `daily_{date}_{office}_{interval}` — confirmed in code and by `test_create_daily_writes_one_compact_document_for_whole_day`.
+  2. `list()` expands compact docs to slot rows and passes legacy slot docs through (`slot_start`/`slot_end`/`skill_id` presence check), then date-filters and sorts — confirmed; covered by the expansion regression test.
+  3. `day_view()` builds blocks from expanded rows via `time_block`, with an office cache to avoid per-row office reads — confirmed.
+  4. Scheduler now calls `DemandService.list(start_at, end_at)` and consumes in-memory slot rows; no dependency on slot documents; no circular import (catalog_service does not import scheduler_service) — confirmed (finding 1 caveat applies only to mixed data).
+  5. `replace_existing_day=false` creates a suffixed doc and does NOT touch the deterministic one — confirmed (see finding 5).
+  6. React success copy accurate: "Firestore documents written: {document_count ?? 1}" plus backend message "Saved daily demand as 1 Firestore document representing N demand slots"; response-model fields added with defaults, backward compatible — confirmed.
+  7. Seed script generates 5 offices x 7 days = 35 compact documents with matching deterministic ids, dry-run by default, JSON backup before delete, batched deletes/writes — confirmed (35 docs vs the previous ~11k slot docs; Codex's live run under DATA-004 verified 35/0/0).
+  8. Migration risks identified: findings 1 and 2 (both defused by DATA-004 for the current database).
+  9. Docs/task log accurate: PROJECT_DOCS architecture note + decision D-20260708-007 + RISK-008; USER_MANUAL compact-storage note + Firestore-quota troubleshooting row; DATA-003 files-touched list is correct (the `firestore_repository.py` quota-mapping change is separately attributed to FIRESTORE-QUOTA-DIAG).
+- Commands/tests run:
+  - `python -m pytest backend/tests` -> 8 passed
+  - `npm run build` (react-app) -> passed (pre-existing chunk-size warning only)
+  - FastAPI TestClient: `GET /api/health` -> 200 (no Firestore calls)
+- Manual smoke status: NOT RUN — Firestore quota exhaustion and missing admin session; after quota recovery: save a daily grid, confirm one document in Firestore, generate a schedule over the seeded week, and check the demand graph.
+- Recommended next step: Codex commits DATA-003 (+ the DATA-004 migration script) as scoped commits, applies the one-line finding-1 key normalization (cheap insurance even though dormant), and backlogs findings 3-5; user runs the post-quota smoke.
+
+## Status Update
+- Agent: Codex
+- Task ID: DATA-004 delete legacy demand slot documents
+- Timestamp: 2026-07-08 21:13:02 +02:00
+- Current state: Complete.
+- Completed:
+  - Added a repeatable migration script that backs up legacy per-slot demand documents, writes compact daily documents where needed, then deletes only legacy slot documents.
+  - Dry run found `11195` legacy slot documents, `0` existing compact groups, and `35` compact documents to write.
+  - Executed the migration against Firebase project `scheduler-app-54991`.
+  - Wrote `35` compact daily demand documents.
+  - Deleted `11195` legacy per-slot demand documents.
+  - Verified `demand_forecasts` now contains `35` compact documents, `0` legacy slot documents, and `0` other documents.
+  - Updated `PROJECT_DOCS.md` so legacy demand cleanup is no longer listed as pending.
+- Files touched:
+  - `call-center-scheduler/scripts/migrate_demand_forecasts_to_compact.py`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m py_compile call-center-scheduler\scripts\migrate_demand_forecasts_to_compact.py` -> passed.
+  - `python scripts\migrate_demand_forecasts_to_compact.py` -> dry run; found `11195` legacy docs and planned `35` compact docs.
+  - `python scripts\migrate_demand_forecasts_to_compact.py --execute` -> wrote `35`, deleted `11195`.
+  - Firestore verification script -> `compact_documents=35`, `legacy_slot_documents=0`, `other_documents=0`.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 8 passed.
+  - Demand expansion check -> `35` compact source documents expand to `10967` slot rows; legacy required total `29352` equals expanded required total `29352`.
+- Backup:
+  - `runtime_logs\firestore-demand-legacy-slot-backup-20260708-191157.json`
+- Open issues:
+  - None for legacy demand document cleanup.
+  - Continue avoiding high-volume Firestore smoke loops; compact storage reduces document count, but reads/writes still count toward quota.
+- Next step: Run schedule-generation/admin smoke against the compact demand documents.
+
+## Status Update
+- Agent: Codex
+- Task ID: DATA-003 compact demand forecast storage
+- Timestamp: 2026-07-08 21:06:29 +02:00
+- Current state: Implementation complete; automated verification passed; live Firestore cleanup remains blocked by quota exhaustion.
+- Completed:
+  - Changed daily-grid demand persistence from one Firestore document per non-zero slot/skill to one compact daily document per office/date/interval.
+  - Compact demand documents use `storage_model=daily_document_v1` and contain `skill_demands` quantity arrays.
+  - `DemandService.list()` now expands compact daily documents and legacy slot documents into slot rows in memory, preserving React preview/API compatibility.
+  - `DemandService.day_view()` and schedule generation now work from service-level flattened rows instead of assuming Firestore slot documents.
+  - `POST /api/v1/demand-forecasts/daily` now reports one Firestore document written and the number of represented demand slots.
+  - Updated the IDnow current-week seed script to generate 35 compact documents for 5 offices x 7 days instead of 11048 slot documents.
+  - Added backend regression tests for compact daily saves and in-memory expansion.
+  - Updated `PROJECT_DOCS.md` and `USER_MANUAL.md`.
+- Files touched:
+  - `call-center-scheduler/backend/app/models/demand.py`
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/app/services/scheduler_service.py`
+  - `call-center-scheduler/backend/tests/test_demand_compact_storage.py`
+  - `call-center-scheduler/scripts/populate_current_week_idnow_demand.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 8 passed.
+  - `npm run build` from `react-app` -> passed; Vite reported the existing >500 kB chunk-size warning.
+  - `python -m py_compile` for changed backend/script files -> passed.
+  - FastAPI import smoke from backend virtualenv -> passed.
+  - Seed script pure generation smoke -> `payloads=35`, `documents=35`, `represented_nonzero_slots=11048`, `storage_model=daily_document_v1`.
+  - Restarted Uvicorn on `127.0.0.1:8000`; `GET /api/health` -> 200.
+- Open issues:
+  - Existing Firestore quota exhaustion still blocks live migration/cleanup and full manual UI smoke.
+  - Existing legacy per-slot demand documents remain in Firestore until quota recovers; after recovery, rerun `python scripts\populate_current_week_idnow_demand.py --execute` or delete legacy current-week rows.
+  - `GET /api/v1/demand-forecasts` still flattens compact documents into slot rows for UI/API compatibility, so API payload size can still be large even though Firestore document count is low.
+- Next step: Claude reviews DATA-003, then after Firestore quota recovers run the compact seed and schedule-generation smoke test.
+
+## Status Update
+- Agent: Codex
 - Task ID: FEAT-003 review closeout
 - Timestamp: 2026-07-08 20:42:38 +02:00
 - Current state: Review closeout complete; frontend feature and backend fix committed.
