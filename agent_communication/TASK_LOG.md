@@ -3,6 +3,47 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: FEAT-008 closeout
+- Timestamp: 2026-07-09 12:18:00 +02:00
+- Current state: Implementation committed, backend restarted from the committed worktree with `--reload`, and FEAT-008 follow-up docs recorded.
+- Commit hash:
+  - `9f9f36f` (`feat: add shift-swap workflow`)
+- Changed files in commit:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `call-center-scheduler/backend/app/main.py`
+  - `call-center-scheduler/backend/app/api/routers/shift_swap_requests.py`
+  - `call-center-scheduler/backend/app/models/shift_swap_request.py`
+  - `call-center-scheduler/backend/app/repositories/shift_swap_requests_repository.py`
+  - `call-center-scheduler/backend/app/services/shift_swap_request_service.py`
+  - `call-center-scheduler/backend/tests/test_shift_swap_requests.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `react-app/src/types.ts`
+- Commands run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 86 passed
+  - `npm test` from `react-app` -> 7 passed
+  - `npm run build` from `react-app` -> passed
+  - Restarted backend from `call-center-scheduler\backend` with `python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
+  - `GET http://127.0.0.1:8000/api/health` -> 200
+- Test additions:
+  - Added a focused 409 test for overlapping source and target shifts in `_validate_swap_pair`.
+  - Added a focused 409 test for duplicate-assignment protection in `_copy_assignment_with_swapped_agent`.
+  - Added a focused 409 test for duplicate pending shift-swap requests.
+- Backlog/task additions recorded in `PROJECT_DOCS.md`:
+  - Added named fast-follow task `SCHED-003` for atomic cross-schedule swap application with a Firestore `batch_update` helper.
+  - Updated `RISK-011` to note the broader half-applied-swap exposure on any mid-failure between the two cross-schedule writes, not just concurrent admins.
+  - Added backlog item to implement `SCHED-003` before production use.
+- Manual/dev docs:
+  - Updated `USER_MANUAL.md` local backend run commands to use `python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000` so local code changes are picked up automatically.
+- Scope verification:
+  - Left out as requested: `runtime_logs/**`, `react-app/vite.config.ts`, and the untracked seed scripts.
+  - Left uncommitted on purpose: `call-center-scheduler/backend/app/repositories/firestore_repository.py` and `call-center-scheduler/backend/tests/test_firestore_repository.py` as separate `SCHED-003` prep, since this task explicitly backlogged atomic batch updates instead of implementing them now.
+
+## Status Update
 - Agent: Claude
 - Role: QA Reviewer
 - Task ID: FEAT-008 (review)
