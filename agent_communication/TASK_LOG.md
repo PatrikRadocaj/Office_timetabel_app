@@ -1741,3 +1741,17 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
   - `agent_communication/USER_MANUAL.md`
 - Commands/tests run: Workspace inspection and documentation review only; no application tests run.
 - Next step: User approves the workflow or requests edits before development begins.
+
+## Status Update
+- Agent: Codex
+- Task ID: DOC-FUNCTION-REFERENCE
+- Timestamp: 2026-07-09
+- Current state: Technical function reference created for presentation use.
+- Completed: Added a maintained Markdown document explaining the named backend functions, service methods, repository methods, React helpers, page callbacks, and main application workflows.
+- In progress: None.
+- Blockers: None.
+- Files touched:
+  - `agent_communication/TECHNICAL_FUNCTION_REFERENCE.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run: Documentation-only change; no application tests required.
+- Next step: Use the reference as presentation source material, or request a shorter slide-oriented version.
