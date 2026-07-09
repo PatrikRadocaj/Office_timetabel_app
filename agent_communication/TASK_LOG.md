@@ -3,6 +3,36 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: TZ-001 closeout
+- Timestamp: 2026-07-09 11:16:10 +02:00
+- Current state: Complete and committed.
+- Commit hash:
+  - `95c2ed3a62633d026fa898c7763b027fb0f13aaa` (`feat: validate office timezones`)
+- Changed files in commit:
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/tests/test_catalog_update_nulls.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `call-center-scheduler/backend/requirements.txt`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands run:
+  - `python -m pytest backend\\tests` in `call-center-scheduler` -> 57 passed
+  - `npm run build` in `react-app` -> passed
+  - `.venv\\Scripts\\python.exe -c "import zoneinfo; zoneinfo.ZoneInfo('UTC')"` in `call-center-scheduler\\backend` -> passed
+  - `.venv\\Scripts\\python.exe -m pip show tzdata` in `call-center-scheduler\\backend` -> confirmed installed (`2026.2`)
+- Done:
+  - Declared `tzdata` in `backend/requirements.txt` so fresh Windows venvs can validate IANA timezones.
+  - Hardened `_validate_iana_timezone()` so `None`, non-strings, and blank strings return the same `400 Invalid timezone` response instead of crashing.
+  - Added the regression test that `OfficeUpdate(timezone=None)` fails with `400`, not `500`.
+  - Added the troubleshooting row covering "Every timezone is rejected as invalid".
+- Scope verification:
+  - Left out as requested: `runtime_logs/**`, `react-app/vite.config.ts`, and the two untracked seed scripts.
+  - Left out unrelated in-flight work: the uncommitted SCHED-002 schedule-visibility files remained out of the commit.
+
+## Status Update
 - Agent: Claude
 - Role: QA Reviewer
 - Task ID: TZ-001 (manual smoke completion)
