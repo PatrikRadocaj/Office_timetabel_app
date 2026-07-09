@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import date, datetime, timezone
 from typing import Any
 
-from app.models.demand import DailyDemandForecastCreate
+import pytest
+
+from app.models.demand import DailyDemandForecastCreate, DemandForecastCreate
 from app.services.catalog_service import DemandService
 
 
@@ -89,6 +93,9 @@ class EmptyScheduleRepository:
     def list(self, order_by: str | None = None) -> list[dict[str, Any]]:
         return []
 
+    def list_active(self, order_by: str | None = None) -> list[dict[str, Any]]:
+        return []
+
 
 def make_service(repo: RecordingDemandRepository) -> DemandService:
     service = object.__new__(DemandService)
@@ -167,6 +174,118 @@ def test_list_expands_compact_daily_documents_to_slot_rows() -> None:
     assert rows[0]["skill_id"] == "skill-a"
     assert rows[0]["required_agents"] == 2
     assert rows[0]["time_block"] == "00:30"
+
+
+def test_list_skips_malformed_compact_documents_with_warning(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger="app.services.catalog_service")
+    repo = RecordingDemandRepository(
+        [
+            {
+                "id": "missing-forecast-date",
+                "office_id": "office-1",
+                "interval_minutes": 30,
+                "storage_model": "daily_document_v1",
+                "skill_demands": [{"skill_id": "skill-a", "priority": 3, "quantities": [1, *([0] * 47)]}],
+            },
+            {
+                "id": "missing-interval",
+                "office_id": "office-1",
+                "forecast_date": "2026-07-08",
+                "storage_model": "daily_document_v1",
+                "skill_demands": [{"skill_id": "skill-a", "priority": 3, "quantities": [1, *([0] * 47)]}],
+            },
+            {
+                "id": "missing-skill-demands",
+                "office_id": "office-1",
+                "forecast_date": "2026-07-08",
+                "interval_minutes": 30,
+                "storage_model": "daily_document_v1",
+            },
+            {
+                "id": "blank-office-id",
+                "office_id": "   ",
+                "forecast_date": "2026-07-08",
+                "interval_minutes": 30,
+                "storage_model": "daily_document_v1",
+                "skill_demands": [{"skill_id": "skill-a", "priority": 3, "quantities": [1, *([0] * 47)]}],
+            },
+            {
+                "id": "valid",
+                "office_id": "office-1",
+                "forecast_date": "2026-07-08",
+                "interval_minutes": 30,
+                "storage_model": "daily_document_v1",
+                "skill_demands": [{"skill_id": "skill-a", "priority": 3, "quantities": [0, 2, *([0] * 46)]}],
+            },
+        ]
+    )
+    service = make_service(repo)
+
+    rows = service.list()
+
+    assert len(rows) == 1
+    assert rows[0]["source_document_id"] == "valid"
+    warning_messages = [record.getMessage() for record in caplog.records]
+    assert sum("Skipping malformed compact demand document" in message for message in warning_messages) == 4
+    assert any("missing or invalid office_id, forecast_date, or interval_minutes" in message for message in warning_messages)
+    assert any("missing or invalid skill_demands" in message for message in warning_messages)
+
+
+def test_single_slot_repost_replaces_quantity_instead_of_accumulating() -> None:
+    repo = RecordingDemandRepository()
+    service = make_service(repo)
+    slot_start = datetime(2026, 7, 8, 6, 0, tzinfo=timezone.utc)
+    slot_end = datetime(2026, 7, 8, 6, 30, tzinfo=timezone.utc)
+
+    service.create(
+        DemandForecastCreate(
+            office_id="office-1",
+            skill_id="skill-a",
+            slot_start=slot_start,
+            slot_end=slot_end,
+            required_agents=2,
+            priority=3,
+        )
+    )
+    service.create(
+        DemandForecastCreate(
+            office_id="office-1",
+            skill_id="skill-a",
+            slot_start=slot_start,
+            slot_end=slot_end,
+            required_agents=5,
+            priority=4,
+        )
+    )
+
+    rows = service.list()
+
+    assert len(rows) == 1
+    assert rows[0]["required_agents"] == 5
+    assert rows[0]["priority"] == 4
+
+
+def test_csv_import_reposts_replace_same_slot_quantity() -> None:
+    class FakeUploadFile:
+        filename = "demand.csv"
+
+        async def read(self) -> bytes:
+            return (
+                "office_id,skill_id,slot_start,slot_end,required_agents,priority\n"
+                "office-1,skill-a,2026-07-08T06:00:00Z,2026-07-08T06:30:00Z,2,3\n"
+                "office-1,skill-a,2026-07-08T06:00:00Z,2026-07-08T06:30:00Z,5,4\n"
+            ).encode("utf-8")
+
+    repo = RecordingDemandRepository()
+    service = make_service(repo)
+
+    result = asyncio.run(service.ingest_csv(FakeUploadFile()))  # type: ignore[arg-type]
+    rows = service.list()
+
+    assert result["message"] == "Successfully imported 2 demand rows into compact daily documents"
+    assert len(rows) == 1
+    assert rows[0]["required_agents"] == 5
+    assert rows[0]["priority"] == 4
 
 
 def test_create_daily_replace_existing_uses_deterministic_prefix_lookup() -> None:

@@ -5,6 +5,32 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 ## Status Update
 - Agent: Codex
 - Role: Driver
+- Task ID: DATA-006 compact demand edge cases and documentation
+- Timestamp: 2026-07-09 11:20:57 +02:00
+- Current state: Complete; compact demand expansion is hardened and compact-storage behavior is documented.
+- Completed:
+  - Hardened compact daily demand expansion so malformed compact documents missing or invalid `office_id`, `forecast_date`, `interval_minutes`, or `skill_demands` are skipped with warning logs instead of raising a 500.
+  - Added regression coverage for malformed compact docs being skipped while valid compact docs still expand.
+  - Added regression coverage that single-slot re-posts replace the slot quantity and priority instead of accumulating.
+  - Added regression coverage that CSV imports use the same replacement semantics when the same office/skill/slot is posted twice.
+  - Updated `USER_MANUAL.md` with the compact-demand contract: 30/60-minute slots only, priority is per skill-day, single/bulk/CSV re-posts replace same-slot quantity, and suffixed daily docs stack only when `replace_existing_day=false`.
+  - Updated `PROJECT_DOCS.md` with DATA-006 status, decision D-20260709-007, and backlog cleanup.
+- Files changed for this task:
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/tests/test_demand_compact_storage.py`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Verification:
+  - `python -m pytest backend\tests\test_demand_compact_storage.py` from `call-center-scheduler` -> 7 passed.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 60 passed.
+- Open issues:
+  - No live Firestore smoke was run; this task used service-level tests only.
+  - Existing unrelated dirty state remains: uncommitted SCHED-002 files, `react-app/vite.config.ts`, and two untracked seed scripts.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
 - Task ID: TZ-001 closeout
 - Timestamp: 2026-07-09 11:16:10 +02:00
 - Current state: Complete and committed.

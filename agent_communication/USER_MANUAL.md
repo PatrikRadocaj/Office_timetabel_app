@@ -230,12 +230,26 @@ Request Day Off and Request Shift Swap are not enabled yet. They need a request 
 
 1. Log in as admin.
 2. Open the admin area.
-3. Add demand manually or upload a CSV file.
+3. Add demand manually with the Daily Demand Forecast Builder or upload a CSV file.
 4. Verify the demand table updates.
 
-Demand forecasts are stored compactly: one Firestore document per office/date/interval can represent a full day of skill demand. The API still shows slot-level rows in the UI and scheduler by expanding that document in memory.
+Demand forecasts are stored compactly: one Firestore document per office/date/interval can represent a full day of skill demand. The API still shows slot-level rows in the UI and scheduler by expanding that document in memory. Only 30-minute and 60-minute slots are supported.
 
-When a daily demand save uses `replace_existing_day=false`, the backend writes an additional suffixed compact document. Those saved documents stack additively for the same office/date/interval.
+Compact demand rules:
+
+- Priority is stored per skill per day, not separately for every time block.
+- Re-posting the same office, skill, date, interval, and slot replaces the quantity for that slot instead of adding to the previous value.
+- Single-slot API posts, bulk API posts, and CSV imports all write into the same compact daily document model.
+- A daily demand save with `replace_existing_day=true` replaces existing compact documents for that office/date/interval.
+- A daily demand save with `replace_existing_day=false` writes an additional suffixed compact document. Those saved documents stack additively for the same office/date/interval.
+
+CSV uploads must include this header:
+
+```csv
+office_id,skill_id,slot_start,slot_end,required_agents,priority
+```
+
+Use ISO datetimes for `slot_start` and `slot_end`, for example `2026-05-10T09:00:00Z`. Every row must be either a 30-minute or 60-minute slot aligned to the office-local interval grid.
 
 ### Generate A Schedule
 

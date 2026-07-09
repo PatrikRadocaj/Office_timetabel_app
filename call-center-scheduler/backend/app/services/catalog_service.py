@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -27,6 +28,8 @@ from app.repositories.demand_repository import DemandForecastsRepository
 from app.repositories.offices_repository import OfficesRepository
 from app.repositories.schedules_repository import SchedulesRepository
 from app.repositories.skills_repository import SkillsRepository
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_aware_utc(timestamp: datetime | str) -> datetime:
@@ -723,9 +726,49 @@ class DemandService:
         document: dict[str, Any],
         office_cache: dict[str, dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
-        office_id = str(document["office_id"])
-        forecast_date = str(document["forecast_date"])
-        interval = int(document["interval_minutes"])
+        doc_id_for_log = str(document.get("id") or "<unknown>")
+        try:
+            office_id = str(document["office_id"])
+            forecast_date = str(document["forecast_date"])
+            interval = int(document["interval_minutes"])
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Skipping malformed compact demand document %s: missing or invalid office_id, forecast_date, or interval_minutes",
+                doc_id_for_log,
+            )
+            return []
+
+        if not office_id.strip():
+            logger.warning(
+                "Skipping malformed compact demand document %s: missing or invalid office_id, forecast_date, or interval_minutes",
+                doc_id_for_log,
+            )
+            return []
+
+        if interval not in {30, 60}:
+            logger.warning(
+                "Skipping malformed compact demand document %s: interval_minutes must be 30 or 60",
+                doc_id_for_log,
+            )
+            return []
+
+        skill_demands_raw = document.get("skill_demands")
+        if not isinstance(skill_demands_raw, list):
+            logger.warning(
+                "Skipping malformed compact demand document %s: missing or invalid skill_demands",
+                doc_id_for_log,
+            )
+            return []
+
+        try:
+            forecast_day = date.fromisoformat(forecast_date)
+        except ValueError:
+            logger.warning(
+                "Skipping malformed compact demand document %s: forecast_date must be ISO yyyy-mm-dd",
+                doc_id_for_log,
+            )
+            return []
+
         slot_count = (24 * 60) // interval
         doc_id = str(document.get("id") or self._daily_document_id(office_id, forecast_date, interval))
 
@@ -734,10 +777,19 @@ class DemandService:
             cache[office_id] = self.office_repo.get(office_id) or {}
 
         office_tz = self._resolve_office_timezone(cache.get(office_id, {}))
-        day_start_local = datetime.combine(date.fromisoformat(forecast_date), time.min, tzinfo=office_tz)
+        day_start_local = datetime.combine(forecast_day, time.min, tzinfo=office_tz)
 
         rows: list[dict[str, Any]] = []
-        for skill_demand in self._normalize_skill_demands(document.get("skill_demands", []), slot_count):
+        try:
+            skill_demands = self._normalize_skill_demands(skill_demands_raw, slot_count)
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Skipping malformed compact demand document %s: invalid skill_demands entries",
+                doc_id,
+            )
+            return []
+
+        for skill_demand in skill_demands:
             skill_id = str(skill_demand["skill_id"])
             priority = int(skill_demand.get("priority", 3))
             quantities = skill_demand["quantities"]
