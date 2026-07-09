@@ -5,6 +5,17 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 ## Status Update
 - Agent: Codex
 - Role: QA agent (QM) / Reviewer
+- Task ID: FEAT-005 post-commit closeout
+- Timestamp: 2026-07-09 02:05:00 +02:00
+- Current state: FEAT-005 committed after passing review, automated checks, and manual smokes.
+- Commit hash: `fe4df12d1e899ac2329bcba031aca388180f0949` (`feat: add admin announcement management`) on branch `codex/invalid-token-redirect`.
+- Included in commit: announcement backend models/service/router/tests, FastAPI router registration, React AdminPage announcement management UI, announcement type, user manual updates, project docs updates, and QA/review task log entries.
+- Excluded from commit as required: `runtime_logs/**`, `.env`/service-account files, untracked seed scripts, and unrelated `react-app/vite.config.ts`.
+- Open issues: None blocking. Remaining dirty worktree items are unrelated local runtime data, the existing `react-app/vite.config.ts` line-ending marker, and untracked seed scripts pending user decision.
+
+## Status Update
+- Agent: Codex
+- Role: QA agent (QM) / Reviewer
 - Task ID: FEAT-005 review closeout + SCHED-001 manual smoke
 - Timestamp: 2026-07-09 02:04:39 +02:00
 - Current state: APPROVED. FEAT-005 manual smoke passed and SCHED-001's remaining office-local availability smoke passed. FEAT-005 is clear to commit; SCHED-001 verification is now complete in `PROJECT_DOCS.md`.
