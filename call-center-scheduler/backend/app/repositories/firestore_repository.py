@@ -191,10 +191,12 @@ class FirestoreRepository:
     def list_by_document_id_prefix(self, prefix: str, limit: int | None = None) -> list[dict[str, Any]]:
         try:
             document_id_field = FieldPath.document_id()
-            query = self.collection.where(document_id_field, ">=", prefix).where(
+            start_key = self.collection.document(prefix)
+            end_key = self.collection.document(f"{prefix}\uf8ff")
+            query = self.collection.where(document_id_field, ">=", start_key).where(
                 document_id_field,
                 "<",
-                f"{prefix}\uf8ff",
+                end_key,
             )
             if limit is not None:
                 query = query.limit(limit)

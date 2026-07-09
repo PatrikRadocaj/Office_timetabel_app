@@ -89,6 +89,29 @@ class _FilterOnlyQuery:
         return [row for row in self.rows if row.to_dict().get("status") == active_value]
 
 
+class _DocumentIdPrefixQuery:
+    def __init__(self, rows: list[_DocSnapshot]) -> None:
+        self.rows = rows
+        self.where_calls: list[tuple[str, str, Any]] = []
+        self.limit_value: int | None = None
+
+    def document(self, document_id: str) -> str:
+        return f"key:{document_id}"
+
+    def where(self, field_name: str, op: str, value: Any) -> "_DocumentIdPrefixQuery":
+        self.where_calls.append((field_name, op, value))
+        return self
+
+    def limit(self, value: int) -> "_DocumentIdPrefixQuery":
+        self.limit_value = value
+        return self
+
+    def stream(self) -> list[_DocSnapshot]:
+        prefix = str(self.where_calls[0][2]).removeprefix("key:")
+        rows = [row for row in self.rows if row.id.startswith(prefix)]
+        return rows[: self.limit_value] if self.limit_value is not None else rows
+
+
 def test_count_uses_firestore_aggregation_when_available() -> None:
     repo = object.__new__(FirestoreRepository)
     repo.collection = _CountableQuery(42)
@@ -151,3 +174,23 @@ def test_schedules_list_active_sorts_in_memory_without_order_by_query() -> None:
 
     assert [row["id"] for row in rows] == ["schedule-2"]
     assert repo.collection.where_calls == [("status", "==", "active")]
+
+
+def test_document_id_prefix_query_uses_document_reference_keys() -> None:
+    repo = object.__new__(FirestoreRepository)
+    repo.collection = _DocumentIdPrefixQuery(
+        [
+            _DocSnapshot("daily_2026-07-09_office-1_30", {"office_id": "office-1"}),
+            _DocSnapshot("daily_2026-07-09_office-1_30_extra", {"office_id": "office-1"}),
+            _DocSnapshot("daily_2026-07-10_office-1_30", {"office_id": "office-1"}),
+        ]
+    )
+
+    rows = repo.list_by_document_id_prefix("daily_2026-07-09_office-1_30", limit=1)
+
+    assert [row["id"] for row in rows] == ["daily_2026-07-09_office-1_30"]
+    assert repo.collection.where_calls == [
+        ("__name__", ">=", "key:daily_2026-07-09_office-1_30"),
+        ("__name__", "<", "key:daily_2026-07-09_office-1_30\uf8ff"),
+    ]
+    assert repo.collection.limit_value == 1
