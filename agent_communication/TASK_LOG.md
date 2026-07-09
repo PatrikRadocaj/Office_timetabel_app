@@ -3,6 +3,46 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: FEAT-007 closeout
+- Timestamp: 2026-07-09 11:56:00 +02:00
+- Current state: Implementation committed, backend restarted from the committed worktree, and shared docs updated with the FEAT-007 follow-ups from review.
+- Commit hash:
+  - `225e869` (`feat: add day-off request workflow`)
+- Changed files in commit:
+  - `agent_communication/COLLABORATION_PROTOCOL.md`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `call-center-scheduler/backend/app/api/routers/day_off_requests.py`
+  - `call-center-scheduler/backend/app/main.py`
+  - `call-center-scheduler/backend/app/models/day_off_request.py`
+  - `call-center-scheduler/backend/app/repositories/day_off_requests_repository.py`
+  - `call-center-scheduler/backend/app/services/day_off_request_service.py`
+  - `call-center-scheduler/backend/tests/test_day_off_requests.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `react-app/src/types.ts`
+- Commands run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 70 passed
+  - `npm test` from `react-app` -> 7 passed
+  - `npm run build` from `react-app` -> passed
+  - Restarted backend on port 8000 from `call-center-scheduler\backend`
+  - `GET http://127.0.0.1:8000/api/health` -> 200
+- Backlog additions recorded in `PROJECT_DOCS.md`:
+  - Agent-side cancel of pending day-off requests plus admin purge or retention workflow
+  - Overlap, duplicate, and past-date validation for day-off requests, or an explicit product decision to leave those to admin review
+  - Extract shared `_resolve_agent_profile` helper used by `MeService` and `DayOffRequestService`
+- Protocol update:
+  - Added a standing verification rule in `COLLABORATION_PROTOCOL.md` to restart the running backend, or use `uvicorn --reload`, before manual smoke after backend code changes.
+- QA artifact decision:
+  - User decision still pending. One labeled rejected request remains in `day_off_requests` with reason `QA smoke test - safe to ignore`.
+  - No Firestore delete was performed in this closeout. Await user choice: keep it as demo data, or remove it manually in Firebase console.
+- Scope verification:
+  - Left out as requested: `runtime_logs/**`, `react-app/vite.config.ts`, and the two untracked seed scripts under `call-center-scheduler/scripts/`.
+
+## Status Update
 - Agent: Claude
 - Role: QA Reviewer
 - Task ID: FEAT-007 (review + live smoke)
