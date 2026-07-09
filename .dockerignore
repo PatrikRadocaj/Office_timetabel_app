@@ -2,6 +2,7 @@
 .agents/
 .codex/
 runtime_logs/
+**/*backup*.json
 
 **/__pycache__/
 **/*.py[cod]
@@ -13,5 +14,15 @@ runtime_logs/
 **/dist/
 
 **/.env
+**/.env.*
+!**/.env.example
 **/*.log
 **/service-account.json
+**/service-account*.json
+**/service_account*.json
+**/*service-account*.json
+**/*service_account*.json
+**/*firebase*credential*.json
+**/*firebase*credentials*.json
+**/*credential*.json
+**/*credentials*.json

@@ -7,14 +7,30 @@ __pycache__/
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv/
 venv/
+
+# Firebase and service account credentials
+**/service-account*.json
+**/service_account*.json
+**/*service-account*.json
+**/*service_account*.json
+**/*firebase*credential*.json
+**/*firebase*credentials*.json
+**/*credential*.json
+**/*credentials*.json
 
 # Frontend
 node_modules/
 
 # Logs
 *.log
+runtime_logs/
+*.backup.json
+*backup*.json
+**/*backup*.json
 
 # IDE
 .vscode/

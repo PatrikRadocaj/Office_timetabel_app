@@ -1,7 +1,7 @@
 # User Manual
 
 Status: Draft template
-Last updated: 2026-07-08
+Last updated: 2026-07-09
 
 ## Application Name
 
@@ -30,7 +30,7 @@ For local development:
 - Python 3.10+ recommended
 - Node.js and npm
 - Firebase project with Authentication and Firestore enabled
-- Firebase service account JSON
+- Firebase service account JSON kept local-only and out of git
 - Optional: Docker Desktop
 
 ## Installation
@@ -46,7 +46,14 @@ pip install -r requirements.txt
 
 ### Firebase Configuration
 
-Create `backend\.env` from the example configuration and set:
+Create `backend\.env` from the example configuration and set your Firebase values.
+
+Keep credentials local only:
+
+- Prefer storing the service-account JSON outside this repository, for example under `C:\Users\User\firebase-keys\`.
+- Set `FIREBASE_SERVICE_ACCOUNT_PATH` to that local file path, or provide the full JSON through `FIREBASE_SERVICE_ACCOUNT_JSON` from your shell or secret manager.
+- Do not commit `.env` files, service-account JSON files, runtime logs, or backup JSON exports.
+- If a real service-account key was ever committed to git, rotate that key in Firebase/GCP and replace the local file.
 
 ```env
 APP_NAME=Call Center Scheduler API
@@ -56,14 +63,15 @@ CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173,h
 
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_WEB_API_KEY=your-web-api-key
-FIREBASE_SERVICE_ACCOUNT_PATH=./service-account.json
+FIREBASE_SERVICE_ACCOUNT_PATH=C:/Users/User/firebase-keys/call-center-scheduler-service-account.json
+# Alternatively, set FIREBASE_SERVICE_ACCOUNT_JSON through your shell or secret manager.
 
 SCHEDULE_SLOT_MINUTES=30
 DEFAULT_SHIFT_HOURS=8
 MAX_WEEKLY_HOURS_HARD_LIMIT=60
 ```
 
-Do not commit `.env` files or service account credentials.
+Do not paste service-account JSON values into chat, screenshots, commits, task logs, or documentation.
 
 ### Frontend
 
@@ -180,7 +188,7 @@ The dashboard shows personal schedule information, hours, skills, announcements,
 
 ### Agent Area
 
-Agents should see their own dashboard data and should not have access to admin-only controls.
+Agents should see their own dashboard data and should not have access to admin-only controls. From the dashboard, agents can view all generated shifts assigned to them and update their own availability windows.
 
 ### Admin Access
 
@@ -207,6 +215,16 @@ Admins can open the admin area from the dashboard using the Admin Panel button, 
 5. Use Edit to change the title, message, or active state inline; use Activate/Deactivate to toggle visibility without editing; use Delete to remove an announcement permanently after confirming the browser prompt.
 
 Agent dashboards show the newest 10 active announcements. Deactivated announcements disappear from dashboards but stay listed in the admin panel. Only admins can view the management list or change announcements; agents receive active announcements through their dashboard only.
+
+### Use Agent Quick Actions
+
+1. Log in as an agent and open the dashboard.
+2. Use View All My Shifts to load every generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
+3. Use Update Availability to add, edit, or remove your availability windows.
+4. Availability windows use your office local time. Monday is 0 and Sunday is 6. Leave the list empty only if you should be treated as always available.
+5. Save Availability writes directly to your agent scheduling profile.
+
+Request Day Off and Request Shift Swap are not enabled yet. They need a request and approval workflow before they can safely change schedules.
 
 ### Add Demand Forecasts
 
@@ -240,7 +258,7 @@ Note: the schedule generation start/end controls use the admin browser's local t
 | React app will not start | Missing npm dependencies | Run `npm install` inside `react-app` |
 | FastAPI root returns React build missing | React build does not exist | Use `npm run dev` for development or run `npm run build` before opening port 8000 |
 | FastAPI serves HTML but built assets return 404 | Backend started before `npm run build`; `/assets` is mounted only at startup | Run `npm run build`, then restart the backend |
-| Firebase errors | Missing or invalid `.env`/service account | Check Firebase project ID, API key, and service account path |
+| Firebase errors | Missing or invalid `.env`/service account | Check Firebase project ID, API key, and service account path or `FIREBASE_SERVICE_ACCOUNT_JSON` |
 | Cloud Firestore quota is exceeded | Firestore rejected reads/writes for the configured project | Wait for quota reset, reduce repeated admin/API refreshes, or increase the Firebase/Google Cloud quota |
 | Login fails for seeded users | Seeded `users` docs are profiles only | Create matching Firebase Auth users or register through the app |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |

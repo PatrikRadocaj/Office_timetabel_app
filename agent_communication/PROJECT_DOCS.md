@@ -91,10 +91,12 @@ C:\Users\User\Desktop\web projekt\
 | FEAT-002 | Expose admin summary and schedule generation in React | Done | Codex | Admin page now loads dashboard summary, generates schedules, and displays assignment coverage results |
 | FEAT-003 | Add edit/delete UI for admin catalog data | Done | Codex | Admin data preview now supports inline edit and confirmed delete for offices, skills, and agents |
 | FEAT-004 | Add agent availability management in React | Done | Codex | Admin agent create/edit now sends and displays office-local weekday/hour availability windows |
+| FEAT-006 | Implement agent dashboard quick actions | Done | Codex | View All My Shifts and Update Availability are real agent-facing flows; day-off and shift-swap request workflows are backlogged |
 | DATA-003 | Compact demand forecast storage | Done | Codex | Daily demand saves now write one Firestore document per office/date/interval and expand to slots only in memory |
 | DATA-004 | Migrate legacy demand slot documents to compact storage | Done | Codex | Legacy per-slot demand documents were backed up, compacted into 35 daily documents, and deleted from Firestore |
 | SCHED-001 | Match availability windows in office-local time | Done | Claude | Scheduler localizes availability and shift-preference hours to the agent's office timezone; midnight-ending slot leak fixed; TimeWindow now validated server-side; manual Munich smoke passed 2026-07-09 |
 | FEAT-005 | Announcements admin management | Done | Claude | New admin-only `/api/v1/announcements` CRUD API plus React admin UI to create, edit, activate/deactivate, and delete announcements; agent dashboards keep showing active announcements; manual smoke passed 2026-07-09 |
+| SEC-001 | Fix Firebase credential and runtime log git hygiene | Done | Codex | Removed tracked local service-account/runtime-log paths from the git index, added ignore rules, and documented local-only credential setup plus key rotation guidance |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
 | DEV-001 | Audit current dirty worktree before development | Proposed | Codex/Claude | Local modified files and runtime logs exist as of 2026-07-08 |
 
@@ -112,6 +114,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260708-008 | 2026-07-08 | Accepted | Agent availability windows use office-local whole hours with Monday = 0 through Sunday = 6; an empty availability list means always available. | Office-local hours match how demand days are defined; unrestricted-agent behavior is preserved. Rationale corrected 2026-07-08: the scheduler originally matched in UTC and was fixed under SCHED-001 to make this contract true. | Codex |
 | D-20260708-009 | 2026-07-08 | Accepted | The scheduler evaluates availability windows and shift-preference day/night hours in the AGENT'S office timezone (not UTC, not the demand office). | Availability windows are entered per agent and documented as office-local; using the agent's own office keeps the contract true even if an agent is assigned to another office's demand. | Claude |
 | D-20260709-001 | 2026-07-09 | Accepted | All `/api/v1/announcements` routes, including list, are admin-only; agents receive active announcements exclusively through `/api/v1/me/dashboard`. | The management list exposes inactive drafts, so it belongs to the admin surface; the dashboard already filters to the newest 10 active announcements. | Claude |
+| D-20260709-002 | 2026-07-09 | Accepted | Agents can directly update their own availability through `/api/v1/me/availability`; day-off and shift-swap actions require a future request/approval model before implementation. | Availability is already part of the agent scheduling profile, while day-off and swap requests need workflow state, reviewer actions, and schedule-impact handling. | Codex |
 
 ## Known Issues And Risks
 
@@ -120,7 +123,7 @@ C:\Users\User\Desktop\web projekt\
 | RISK-001 | Workflow | Multiple historical coordination files exist. | Medium | Open | New active docs should be used going forward; old docs remain historical context. |
 | RISK-002 | Frontend | Old vanilla frontend has been removed; historical QA docs may still reference it. | Low | Open | Treat those references as history and run fresh React UI QA. |
 | RISK-003 | Git state | Existing local modified/untracked files are present. | Medium | Open | Future agents must inspect `git status` before edits and avoid overwriting user changes. |
-| RISK-004 | Security | Firebase credentials and service account files must not be exposed. | High | Open | Keep secrets out of commits and screenshots. |
+| RISK-004 | Security | Firebase credentials and service account files must not be exposed. | High | Open | Keep secrets out of commits and screenshots. On 2026-07-09, `call-center-scheduler/backend/service-account.json` was removed from git tracking; rotate any Firebase/GCP service-account key that was previously committed. Local setup should use `FIREBASE_SERVICE_ACCOUNT_PATH` or `FIREBASE_SERVICE_ACCOUNT_JSON` only. |
 | RISK-005 | QA freshness | Existing QA reports are from 2026-05-09. | Medium | Open | Run a fresh baseline after protocol approval and before major development. |
 | RISK-006 | Routing | FastAPI currently serves React only for `/`, `/dashboard`, and `/admin`. | Low | Open | Add an SPA catch-all when new React routes are introduced so direct navigation does not 404. |
 | RISK-007 | Role UX | Admins have both employee-dashboard and admin-panel access. | Low | Monitoring | Keep `/admin` protected; do not reintroduce automatic redirects away from `/dashboard`. |
@@ -148,8 +151,10 @@ C:\Users\User\Desktop\web projekt\
 18. Harden compact demand expansion so malformed documents missing `forecast_date` or `interval_minutes` are skipped with a log entry instead of raising a 500.
 19. Keep demand manual copy clear that `replace_existing_day=false` writes suffixed documents and stacks demand additively.
 20. Refactor compact demand seed/migration scripts to reuse `DemandService._daily_document_payload` and avoid schema drift.
-21. Update the task board with the first approved development task.
-22. Keep the user manual current as features stabilize.
+21. Design and implement day-off request workflow: request model, agent create/list status, admin review/approve/reject, and scheduler/schedule-impact handling.
+22. Design and implement shift-swap request workflow: request model, eligible target shift/agent selection, approval flow, and schedule update policy.
+23. Update the task board with the first approved development task.
+24. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 

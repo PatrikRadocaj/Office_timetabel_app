@@ -3,6 +3,162 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: SEC-001 (review)
+- Timestamp: 2026-07-09
+- Current state: Review complete. Verdict: APPROVED WITH FINDINGS — all five hygiene checks pass and the documentation guidance is correct and honest; the one substantive gap is that SEC-001 itself is still UNCOMMITTED, so none of this protection is in git history yet. Credential file contents were never opened, printed, or quoted; all checks were path-level.
+- Check results:
+  1. No credential JSON tracked: PASS — `git ls-files` + credential-pattern grep returns nothing.
+  2. No runtime logs/backups tracked: PASS — `git ls-files -- "runtime_logs/**"` returns 0 paths; no `*backup*.json` tracked.
+  3. Ignore rules effective: PASS — `git check-ignore -v` attributes `service-account.json` to `call-center-scheduler/.gitignore:18` and `runtime_logs/backend.err.log` to root `.gitignore:20`.
+  4. Safe template tracked: PASS — `call-center-scheduler/backend/.env.example` remains tracked; the `!**/.env.example` negation is ordered correctly in both ignore files.
+  5. Docs guidance: PASS — USER_MANUAL states credentials are local-only (prefer a path outside the repo), documents BOTH `FIREBASE_SERVICE_ACCOUNT_PATH` and `FIREBASE_SERVICE_ACCOUNT_JSON` (verified both are actually supported in `app/core/firebase.py`), forbids committing `.env`/service-account JSON/runtime logs/backup JSON, forbids pasting values into chat/screenshots/logs, and explicitly instructs key rotation; RISK-004 and Codex's SEC-001 entry carry the same rotation guidance.
+- Additional verifications:
+  - Local files preserved: `service-account.json`, `backend.err.log`, `backend.out.log` still exist on disk (`git rm --cached` behaved as intended).
+  - No `.env` files tracked; broader sweep for `.pem/.key/.p12/.pfx/secret` tracked files: none.
+  - Staged index is exactly the five declared removals (189 deletions, nothing else staged) — clean and scoped.
+  - History exposure CONFIRMED at path level: `service-account.json` and `runtime_logs/**` are reachable in history (tracked since first commit `5030a8d`). This validates the expected open issue.
+- Findings (ordered by severity):
+  1. Medium — SEC-001 is staged but NOT committed, and the new root `.gitignore` is untracked. Until committed, every protection this task added exists only in this working tree: a fresh clone or reset would still track the credential file, and the ignore rules would vanish. Codex's log honestly declares "Changes are not committed", so this is the deliberate last step, not a discrepancy — but it should happen promptly and as a SCOPED commit (the index currently coexists with unrelated in-flight `me.py`/dashboard work that must not ride along).
+  2. Confirmed open issue (user action, not code) — The service-account key remains in git history; removal from tracking does not scrub it. ROTATE the Firebase/GCP service-account key in Google Cloud, replace the local file, and treat the old key as compromised. History rewrite (filter-repo/BFG) is a separate decision per the review scope; note the repo has no remote listed, which lowers exposure but does not remove the need to rotate.
+  3. Low — `call-center-scheduler/backend/.env.example` still lists stale CORS origins (`localhost:5500`, the removed vanilla frontend's port) instead of `localhost:5173`; while touching this file anyway, the example should match the React/Vite reality (config.py's default already includes 5173).
+  4. Info — The `**/*credential*.json` / `**/*credentials*.json` ignore patterns are very broad and would silently ignore any future legitimate fixture named e.g. `test_credentials.json`. Acceptable security posture for this repo; just be aware when a future test fixture "mysteriously" fails to stage.
+- Commands run (all path-level):
+  - `git ls-files` + pattern greps (checks 1, 2, 4, sensitive-extension sweep)
+  - `git check-ignore -v` on the two representative paths (check 3)
+  - `git log --oneline --all --follow` on the credential/log paths (history exposure)
+  - `git status --short --branch`, `git diff --cached --stat` (staged-state verification)
+  - `ls` existence checks on preserved local files
+- Recommended next step: Codex commits SEC-001 as a scoped commit (staged deletions + both `.gitignore` files + `.dockerignore` + `.env.example` + README/docs — NOT the unrelated `me.py`/dashboard work), ideally fixing the 5500->5173 CORS nit in the same pass; the USER rotates the Firebase/GCP key and confirms rotation in the task log so RISK-004 can move to Mitigated.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: SEC-001 Firebase/security repo hygiene
+- Timestamp: 2026-07-09 09:56:38 +02:00
+- Current state: Complete; sensitive/runtime paths removed from git tracking and local-only credential guidance documented. Changes are not committed.
+- Completed:
+  - Removed `call-center-scheduler/backend/service-account.json` from git tracking with `git rm --cached`, preserving the local file.
+  - Removed tracked runtime logs from git tracking with `git rm --cached`, preserving local files: `runtime_logs/backend.err.log`, `runtime_logs/backend.out.log`, `runtime_logs/react.err.log`, and `runtime_logs/react.out.log`.
+  - Added root and subproject ignore rules for service-account JSON files, Firebase credential JSON files, `.env` files, `runtime_logs/**`, log files, and backup JSON exports.
+  - Updated setup docs to use local-only Firebase credentials through `FIREBASE_SERVICE_ACCOUNT_PATH` or `FIREBASE_SERVICE_ACCOUNT_JSON`.
+  - Recorded in `PROJECT_DOCS.md` that the previously tracked service-account key path requires Firebase/GCP key rotation.
+- Files changed for this task:
+  - `.gitignore`
+  - `.dockerignore`
+  - `call-center-scheduler/.gitignore`
+  - `call-center-scheduler/backend/.env.example`
+  - `call-center-scheduler/README.md`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+  - `call-center-scheduler/backend/service-account.json` removed from tracking only
+  - `runtime_logs/backend.err.log` removed from tracking only
+  - `runtime_logs/backend.out.log` removed from tracking only
+  - `runtime_logs/react.err.log` removed from tracking only
+  - `runtime_logs/react.out.log` removed from tracking only
+- Verification:
+  - `git ls-files | rg -i "(service[-_]?account|service_account|firebase.*credential|credential.*firebase|credentials?).*\\.json$"` -> no tracked service-account/credential JSON.
+  - `git ls-files -- "runtime_logs/**"` -> no tracked runtime logs or runtime backups.
+  - `git ls-files | rg -i "backup.*\\.json$"` -> no tracked backup JSON.
+  - `git check-ignore -v -- "call-center-scheduler/backend/service-account.json" "runtime_logs/backend.err.log" "runtime_logs/firebase-clear-backup-20260708-164847.json"` -> paths are ignored by the new rules.
+  - `Test-Path` confirmed the local service-account file and representative runtime logs still exist.
+  - `git status --short --branch` reviewed after changes.
+- Tests run: Not run; this task changed git hygiene and documentation only.
+- Open issues:
+  - Rotate the Firebase/GCP service-account key because a real-looking service-account JSON path was previously tracked. Removing it from tracking does not invalidate existing keys or scrub old git history.
+  - Existing unrelated FEAT-006 code/docs work, seed scripts, and `react-app/vite.config.ts` remain in the dirty worktree and were not modified intentionally by this task.
+
+## Status Update
+- Agent: Codex
+- Role: Driver / Coder
+- Task ID: FEAT-006 personal shift aggregation follow-up
+- Timestamp: 2026-07-09 02:35:23 +02:00
+- Current state: Complete; backend regression fixed and verified.
+- Completed:
+  - Updated `MeService._collect_agent_slot_assignments` so the newest generated assignment for a slot/office/skill is authoritative even when it does not include the current agent.
+  - Preserved current-user isolation: the method only returns assignments that include the current agent after the latest-slot authority check; it does not expose other agents' details.
+  - Added regression coverage where an older generated schedule assigns the current agent and a newer schedule for the same slot assigns another agent, proving both `GET /me/shifts`-style aggregation and weekly dashboard rows omit the stale shift.
+- Files touched:
+  - `call-center-scheduler/backend/app/services/me_service.py`
+  - `call-center-scheduler/backend/tests/test_me_quick_actions.py`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m pytest backend\tests\test_me_quick_actions.py` from `call-center-scheduler` -> 7 passed.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 40 passed.
+  - `npm run build` not run because no frontend files were touched for this follow-up.
+- Open issues: None for this follow-up. Existing unrelated dirty files remain in the worktree: FEAT-006 frontend/docs work from the prior task, `react-app/vite.config.ts`, runtime logs/backups, and untracked seed scripts.
+
+## Status Update
+- Agent: Codex
+- Role: QA agent / Reviewer
+- Task ID: FEAT-006 agent quick actions
+- Timestamp: 2026-07-09 02:31:24 +02:00
+- Current state: APPROVED. Code review and automated verification passed; no blocking findings.
+- Review scope:
+  - Reviewed the new `/api/v1/me/shifts`, `/api/v1/me/availability` GET, and `/api/v1/me/availability` PUT paths in `backend/app/api/routers/me.py`, `backend/app/models/me.py`, and `backend/app/services/me_service.py`.
+  - Reviewed `backend/tests/test_me_quick_actions.py`, `react-app/src/pages/DashboardPage.tsx`, `react-app/src/types.ts`, `PROJECT_DOCS.md`, and `USER_MANUAL.md`.
+- Confirmations:
+  - The new `/me` routes use `get_current_user`; unauthenticated live checks returned 401 for `GET /api/v1/me/shifts`, `GET /api/v1/me/availability`, and `PUT /api/v1/me/availability`.
+  - Availability update resolves the caller's own linked/email-matched agent profile and updates only that agent document's `availability` field; there is no agent ID or arbitrary admin CRUD surface exposed through the new endpoint.
+  - Existing admin agent CRUD remains behind `require_admin` in `backend/app/api/routers/agents.py`; no admin-only permissions were leaked to agents.
+  - Availability schema alignment is consistent: backend quick-action payloads use the shared `TimeWindow` model, and React validation mirrors day 0-6, start 0-23, end 1-24, and start-before-end rules.
+  - React quick actions use loading state, alert/error reporting, and existing 401 session invalidation for dashboard load, all-shifts load, availability load, and availability save.
+  - Request Day Off and Request Shift Swap are clearly backlog-only in the UI message, `PROJECT_DOCS.md`, and `USER_MANUAL.md`; they do not pretend to submit requests.
+- Findings:
+  - Low / follow-up: shift aggregation still inherits the existing generated-schedule semantics. `_collect_agent_slot_assignments` deduplicates only assignments that already contain the current agent, so if a later generated schedule for the same slot assigns a different agent, an older assignment for this agent can still appear. This is not a cross-agent data leak and does not block FEAT-006 because the app currently has no active/cancelled schedule model, but a future scheduler-status model should decide whether personal dashboards show historical generated assignments or only latest active assignments.
+- Commands/tests run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 38 passed.
+  - `npm run build` from `react-app` -> passed; Vite reported the existing >500 kB chunk-size warning.
+  - Local sanity: `GET http://127.0.0.1:8000/api/health` -> 200; `GET http://127.0.0.1:5173/` -> 200.
+  - Live auth guard checks: `GET /api/v1/me/shifts` no token -> 401; `GET /api/v1/me/availability` no token -> 401; `PUT /api/v1/me/availability` no token -> 401.
+- Manual smoke:
+  - Not independently rerun in this QA pass. The local stack was up, but the in-app browser automation session timed out while checking for an existing logged-in `/dashboard` session, so no authenticated agent session was available to this reviewer without entering credentials.
+  - Prior driver smoke evidence from 2026-07-09 remains recorded below and covers the happy-path UI flow with a temporary agent.
+- Approval status: APPROVED with the low follow-up above; no blocker/high/medium defects found.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: FEAT-006 agent quick actions
+- Timestamp: 2026-07-09 02:23:25 +02:00
+- Current state: Complete; automated checks and manual agent smoke passed.
+- Completed:
+  - Added agent-facing `GET /api/v1/me/shifts` to return all generated shift days assigned to the current agent, beyond the next-7-days dashboard table.
+  - Added agent-facing `GET /api/v1/me/availability` and `PUT /api/v1/me/availability`; agents can directly update their own resolved agent profile availability.
+  - Extended the dashboard payload to include current availability.
+  - Replaced dashboard placeholders for View All My Shifts and Update Availability with real React flows.
+  - Kept Request Day Off and Request Shift Swap as backlog messages because no request/approval backend model exists yet.
+  - Documented D-20260709-002 and backlog entries for day-off and shift-swap workflows.
+- Files touched:
+  - `call-center-scheduler/backend/app/api/routers/me.py`
+  - `call-center-scheduler/backend/app/models/me.py`
+  - `call-center-scheduler/backend/app/services/me_service.py`
+  - `call-center-scheduler/backend/tests/test_me_quick_actions.py`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `react-app/src/types.ts`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 38 passed.
+  - `npm run build` from `react-app` -> passed; Vite reported the known >500 kB chunk-size warning.
+  - Restarted local FastAPI on `127.0.0.1:8000`; health check returned 200 and unauthenticated `GET /api/v1/me/shifts` returned 401, confirming the new route was loaded.
+- Manual smoke:
+  - Created a temporary agent auth/profile, linked agent document, and generated schedule assignment for 2026-07-20, outside the next-7-days dashboard window.
+  - Logged in through the React app as that agent.
+  - Confirmed the dashboard showed agent controls without the Admin Panel button.
+  - Clicked View All My Shifts and verified the 20/07/2026 09:00-17:00 IDnow Berlin Ident-Center / Data Verification shift appeared.
+  - Clicked Update Availability, verified the existing Monday 09:00-17:00 window, changed it to Tuesday 10:00-18:00, saved, and verified the value persisted after reload.
+  - Clicked Request Day Off and verified it now shows the request/approval backlog message and closes the availability panel.
+  - Logged out and deleted the temporary auth user, user profile, agent document, and generated schedule document.
+- Open issues:
+  - Request Day Off and Request Shift Swap remain intentionally unimplemented until request/approval models and admin review flows are designed.
+  - Existing unrelated dirty state remains: `react-app/vite.config.ts`, runtime logs/backups, and untracked seed scripts.
+- Next step: Claude can review FEAT-006, focusing on `/me` authorization boundaries, shift aggregation semantics, and the direct availability-update product decision.
+
+## Status Update
 - Agent: Codex
 - Role: QA agent (QM) / Reviewer
 - Task ID: FEAT-005 post-commit closeout

@@ -56,7 +56,8 @@ web projekt/
    - Firebase Console -> Project settings -> General -> Web API Key.
 5. Create a **Service Account key JSON**:
    - Project settings -> Service accounts -> Generate new private key.
-6. Save service account JSON file (for example at `backend/service-account.json`).
+6. Save the service account JSON file in a local-only location outside this repository when possible, for example under `C:\Users\User\firebase-keys\`.
+7. If a real service-account key was ever committed to git, rotate it in Firebase/GCP before continuing to use the project.
 
 ## 3) Backend Setup (FastAPI)
 
@@ -66,6 +67,8 @@ web projekt/
    - `FIREBASE_PROJECT_ID`
    - `FIREBASE_WEB_API_KEY`
    - `FIREBASE_SERVICE_ACCOUNT_PATH` (or `FIREBASE_SERVICE_ACCOUNT_JSON`)
+
+Do not commit `backend/.env`, service-account JSON files, runtime logs, or backup JSON exports.
 
 Example:
 
@@ -77,7 +80,8 @@ CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173,h
 
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_WEB_API_KEY=your-web-api-key
-FIREBASE_SERVICE_ACCOUNT_PATH=./service-account.json
+FIREBASE_SERVICE_ACCOUNT_PATH=C:/Users/User/firebase-keys/call-center-scheduler-service-account.json
+# Alternatively, set FIREBASE_SERVICE_ACCOUNT_JSON through your shell or secret manager.
 
 SCHEDULE_SLOT_MINUTES=30
 DEFAULT_SHIFT_HOURS=8

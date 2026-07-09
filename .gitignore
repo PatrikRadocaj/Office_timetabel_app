@@ -1,0 +1,25 @@
+# Local environment files
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Firebase and service account credentials
+**/service-account*.json
+**/service_account*.json
+**/*service-account*.json
+**/*service_account*.json
+**/*firebase*credential*.json
+**/*firebase*credentials*.json
+**/*credential*.json
+**/*credentials*.json
+
+# Runtime logs and local backups
+runtime_logs/
+runtime_logs/**/*.log
+runtime_logs/**/*.json
+*.backup.json
+*backup*.json
+**/*backup*.json
