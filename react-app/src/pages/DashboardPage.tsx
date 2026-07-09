@@ -3,13 +3,16 @@ import { useNavigate } from "react-router-dom";
 import AlertBanner from "../components/AlertBanner";
 import { apiRequest, isSessionEndingAuthError } from "../lib/api";
 import { clearAuth } from "../lib/auth";
-import { formatDate, formatHours, formatTime } from "../lib/format";
+import { formatDate, formatDateTime, formatHours, formatTime } from "../lib/format";
 import type {
   AgentAvailabilityResponse,
   AgentDashboardData,
   AgentDayShift,
   AgentShiftListResponse,
   DayOffRequest,
+  ShiftSwapOption,
+  ShiftSwapOptionsResponse,
+  ShiftSwapRequest,
   TimeWindow,
   UserProfile,
 } from "../types";
@@ -19,7 +22,7 @@ interface DashboardPageProps {
   onSessionChange: () => void;
 }
 
-type QuickActionPanel = "dayOff" | "shifts" | "availability" | null;
+type QuickActionPanel = "dayOff" | "shiftSwap" | "shifts" | "availability" | null;
 
 const dayOptions = [
   { value: 0, label: "Monday", shortLabel: "Mon" },
@@ -70,6 +73,20 @@ const formatAvailabilityLabel = (window: TimeWindow): string => {
   return `${day?.shortLabel || `Day ${window.day_of_week}`} ${formatHour(window.start_hour)}-${formatHour(window.end_hour)}`;
 };
 
+const optionValue = (option: ShiftSwapOption): string =>
+  JSON.stringify({
+    schedule_id: option.schedule_id,
+    assignment_key: option.assignment_key,
+    agent_id: option.agent_id,
+  });
+
+const parseOptionValue = (value: string): { schedule_id: string; assignment_key: string; agent_id: string } => JSON.parse(value);
+
+const formatShiftSwapOption = (option: ShiftSwapOption, includeAgent = false): string => {
+  const agent = includeAgent ? `${option.agent_name} | ` : "";
+  return `${agent}${formatDateTime(option.slot_start)} - ${formatTime(option.slot_end)} | ${option.office_name} | ${option.skill_name}`;
+};
+
 export default function DashboardPage({ user, onSessionChange }: DashboardPageProps) {
   const navigate = useNavigate();
   const [data, setData] = useState<AgentDashboardData | null>(null);
@@ -81,6 +98,10 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
   const [dayOffRequests, setDayOffRequests] = useState<DayOffRequest[]>([]);
   const [dayOffForm, setDayOffForm] = useState({ startDate: "", endDate: "", reason: "" });
   const [dayOffSubmitting, setDayOffSubmitting] = useState(false);
+  const [shiftSwapRequests, setShiftSwapRequests] = useState<ShiftSwapRequest[]>([]);
+  const [shiftSwapOptions, setShiftSwapOptions] = useState<ShiftSwapOptionsResponse>({ my_shifts: [], target_shifts: [] });
+  const [shiftSwapForm, setShiftSwapForm] = useState({ source: "", target: "", reason: "" });
+  const [shiftSwapSubmitting, setShiftSwapSubmitting] = useState(false);
   const [allShifts, setAllShifts] = useState<AgentDayShift[]>([]);
   const [availabilityDraft, setAvailabilityDraft] = useState<TimeWindow[]>([]);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
@@ -148,14 +169,6 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
     }
   };
 
-  const showBacklogMessage = (action: string) => {
-    setActiveQuickAction(null);
-    setAlert({
-      type: "info",
-      message: `${action} needs a request and approval workflow before it can be enabled. It is recorded in the backlog.`,
-    });
-  };
-
   const openDayOffRequests = async () => {
     setAlert(null);
     setActiveQuickAction("dayOff");
@@ -202,6 +215,66 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
       handleActionError(err, "Unable to submit day-off request");
     } finally {
       setDayOffSubmitting(false);
+    }
+  };
+
+  const openShiftSwapRequests = async () => {
+    setAlert(null);
+    setActiveQuickAction("shiftSwap");
+    setQuickActionLoading(true);
+
+    try {
+      const [requests, options] = await Promise.all([
+        apiRequest<ShiftSwapRequest[]>("/me/shift-swap-requests"),
+        apiRequest<ShiftSwapOptionsResponse>("/me/shift-swap-options"),
+      ]);
+      setShiftSwapRequests(requests);
+      setShiftSwapOptions(options);
+      setShiftSwapForm((current) => ({
+        ...current,
+        source: current.source || (options.my_shifts[0] ? optionValue(options.my_shifts[0]) : ""),
+        target: current.target || (options.target_shifts[0] ? optionValue(options.target_shifts[0]) : ""),
+      }));
+    } catch (err) {
+      handleActionError(err, "Unable to load shift-swap data");
+    } finally {
+      setQuickActionLoading(false);
+    }
+  };
+
+  const submitShiftSwapRequest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAlert(null);
+
+    try {
+      if (!shiftSwapForm.source) {
+        throw new Error("Choose one of your shifts to swap.");
+      }
+      if (!shiftSwapForm.target) {
+        throw new Error("Choose the target shift you want to swap with.");
+      }
+
+      const source = parseOptionValue(shiftSwapForm.source);
+      const target = parseOptionValue(shiftSwapForm.target);
+      setShiftSwapSubmitting(true);
+      const created = await apiRequest<ShiftSwapRequest>("/me/shift-swap-requests", {
+        method: "POST",
+        body: {
+          source_schedule_id: source.schedule_id,
+          source_assignment_key: source.assignment_key,
+          target_schedule_id: target.schedule_id,
+          target_assignment_key: target.assignment_key,
+          target_agent_id: target.agent_id,
+          reason: shiftSwapForm.reason.trim() || null,
+        },
+      });
+      setShiftSwapRequests((current) => [created, ...current]);
+      setShiftSwapForm((current) => ({ ...current, reason: "" }));
+      setAlert({ type: "success", message: "Shift-swap request submitted for admin review." });
+    } catch (err) {
+      handleActionError(err, "Unable to submit shift-swap request");
+    } finally {
+      setShiftSwapSubmitting(false);
     }
   };
 
@@ -439,7 +512,12 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
                       </button>
                     </div>
                     <div className="col-12 col-sm-6 col-xl-3">
-                      <button className="btn btn-outline-primary w-100" onClick={() => showBacklogMessage("Request Shift Swap")} type="button">
+                      <button
+                        className={`btn w-100 ${activeQuickAction === "shiftSwap" ? "btn-primary" : "btn-outline-primary"}`}
+                        onClick={() => void openShiftSwapRequests()}
+                        type="button"
+                        disabled={quickActionLoading}
+                      >
                         Request Shift Swap
                       </button>
                     </div>
@@ -574,6 +652,137 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
                       ) : (
                         <p className="ccs-muted mb-0">No day-off requests submitted yet.</p>
                       )}
+                    </div>
+                  )}
+
+                  {activeQuickAction === "shiftSwap" && (
+                    <div className="border rounded p-3 mt-3">
+                      <div className="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3">
+                        <div>
+                          <h6 className="mb-1">Request Shift Swap</h6>
+                          <div className="small ccs-muted">
+                            Admin approval swaps the assignments only after skills, office, availability, and duplicate-assignment checks pass.
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn-sm btn-outline-secondary"
+                          type="button"
+                          onClick={() => void openShiftSwapRequests()}
+                          disabled={quickActionLoading}
+                        >
+                          {quickActionLoading ? "Loading..." : "Refresh"}
+                        </button>
+                      </div>
+
+                      <form className="row g-2 align-items-end mb-3" onSubmit={submitShiftSwapRequest}>
+                        <div className="col-12 col-lg-4">
+                          <label className="form-label">Your shift</label>
+                          <select
+                            className="form-select"
+                            value={shiftSwapForm.source}
+                            onChange={(event) => setShiftSwapForm((current) => ({ ...current, source: event.target.value }))}
+                          >
+                            <option value="">Choose your shift</option>
+                            {shiftSwapOptions.my_shifts.map((option) => (
+                              <option key={`${option.schedule_id}-${option.assignment_key}`} value={optionValue(option)}>
+                                {formatShiftSwapOption(option)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-12 col-lg-4">
+                          <label className="form-label">Target shift</label>
+                          <select
+                            className="form-select"
+                            value={shiftSwapForm.target}
+                            onChange={(event) => setShiftSwapForm((current) => ({ ...current, target: event.target.value }))}
+                          >
+                            <option value="">Choose target shift</option>
+                            {shiftSwapOptions.target_shifts.map((option) => (
+                              <option key={`${option.schedule_id}-${option.assignment_key}-${option.agent_id}`} value={optionValue(option)}>
+                                {formatShiftSwapOption(option, true)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-12 col-lg-3">
+                          <label className="form-label">Reason optional</label>
+                          <input
+                            className="form-control"
+                            maxLength={500}
+                            value={shiftSwapForm.reason}
+                            onChange={(event) => setShiftSwapForm((current) => ({ ...current, reason: event.target.value }))}
+                            placeholder="Need to trade this shift..."
+                          />
+                        </div>
+                        <div className="col-12 col-lg-1 d-grid">
+                          <button className="btn btn-success" type="submit" disabled={shiftSwapSubmitting || quickActionLoading}>
+                            {shiftSwapSubmitting ? "..." : "Submit"}
+                          </button>
+                        </div>
+                      </form>
+
+                      {quickActionLoading ? (
+                        <p className="ccs-muted mb-0">Loading shift-swap data...</p>
+                      ) : !shiftSwapOptions.my_shifts.length ? (
+                        <p className="ccs-muted mb-0">No active generated shifts are assigned to you yet.</p>
+                      ) : !shiftSwapOptions.target_shifts.length ? (
+                        <p className="ccs-muted mb-0">No same-office target shifts are currently available.</p>
+                      ) : null}
+
+                      <div className="table-responsive ccs-table-wrap mt-3">
+                        <table className="table table-sm align-middle">
+                          <thead>
+                            <tr>
+                              <th>Status</th>
+                              <th>Your Shift</th>
+                              <th>Target Shift</th>
+                              <th>Reason</th>
+                              <th>Review</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shiftSwapRequests.length ? (
+                              shiftSwapRequests.map((request) => (
+                                <tr key={request.id}>
+                                  <td>
+                                    <span
+                                      className={`badge ${
+                                        request.status === "approved"
+                                          ? "text-bg-success"
+                                          : request.status === "rejected"
+                                            ? "text-bg-danger"
+                                            : "text-bg-warning"
+                                      }`}
+                                    >
+                                      {request.status}
+                                    </span>
+                                  </td>
+                                  <td>{formatShiftSwapOption(request.source_shift)}</td>
+                                  <td>{formatShiftSwapOption(request.target_shift, true)}</td>
+                                  <td>{request.reason || "-"}</td>
+                                  <td>
+                                    {request.review_note || request.reviewed_by_name ? (
+                                      <>
+                                        <div>{request.review_note || "-"}</div>
+                                        <div className="small ccs-muted">{request.reviewed_by_name || ""}</div>
+                                      </>
+                                    ) : (
+                                      <span className="ccs-muted">Pending review</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="ccs-muted">
+                                  No shift-swap requests submitted yet.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
 

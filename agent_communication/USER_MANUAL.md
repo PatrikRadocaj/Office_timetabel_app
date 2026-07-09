@@ -21,6 +21,7 @@ The application helps a multi-office call center manage:
 - Schedule generation
 - Dashboard metrics and coverage gaps
 - Agent day-off requests and admin review
+- Agent shift-swap requests and admin review
 - Agent-specific dashboard data
 
 ## Prerequisites
@@ -90,7 +91,7 @@ The backend serves the API. In development, run the React frontend separately wi
 ```powershell
 cd "C:\Users\User\Desktop\web projekt\call-center-scheduler\backend"
 .\.venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Open:
@@ -121,7 +122,7 @@ cd "C:\Users\User\Desktop\web projekt\react-app"
 npm run build
 cd "C:\Users\User\Desktop\web projekt\call-center-scheduler\backend"
 .\.venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 After the React build exists, FastAPI can serve the app at `http://localhost:8000/`.
@@ -180,6 +181,7 @@ Admins can manage:
 - Agents, including create, edit, delete, skill assignment changes, and availability windows
 - Announcements, including create, edit, activate/deactivate, and delete
 - Day-off requests, including review, approval, and rejection
+- Shift-swap requests, including review, approval, rejection, and schedule assignment swaps
 - Demand forecasts
 - CSV demand uploads
 - Schedule generation
@@ -190,7 +192,7 @@ The dashboard shows personal schedule information, hours, skills, announcements,
 
 ### Agent Area
 
-Agents should see their own dashboard data and should not have access to admin-only controls. From the dashboard, agents can view all active generated shifts assigned to them, update their own availability windows, and submit day-off requests for admin review.
+Agents should see their own dashboard data and should not have access to admin-only controls. From the dashboard, agents can view all active generated shifts assigned to them, update their own availability windows, submit day-off requests, and request shift swaps for admin review.
 
 ### Admin Access
 
@@ -223,12 +225,16 @@ Agent dashboards show the newest 10 active announcements. Deactivated announceme
 1. Log in as an agent and open the dashboard.
 2. Use Request Day Off to open your day-off request form and history.
 3. Enter a start date, end date, and optional reason, then submit the request.
-4. Use View All My Shifts to load every active generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
-5. Use Update Availability to add, edit, or remove your availability windows.
-6. Availability windows use your office local time. Monday is 0 and Sunday is 6. Leave the list empty only if you should be treated as always available.
-7. Save Availability writes directly to your agent scheduling profile.
+4. Use Request Shift Swap to choose one of your active generated shifts and a same-office target shift assigned to another agent.
+5. Add an optional reason and submit the swap request for admin review.
+6. Use View All My Shifts to load every active generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
+7. Use Update Availability to add, edit, or remove your availability windows.
+8. Availability windows use your office local time. Monday is 0 and Sunday is 6. Leave the list empty only if you should be treated as always available.
+9. Save Availability writes directly to your agent scheduling profile.
 
-Day-off requests can be pending, approved, or rejected. Approval records the request status only; it does not automatically remove generated assignments or regenerate schedules. Request Shift Swap is not enabled yet and still needs a request and approval workflow before it can safely change schedules.
+Day-off requests can be pending, approved, or rejected. Approval records the request status only; it does not automatically remove generated assignments or regenerate schedules.
+
+Shift-swap requests can be pending, approved, or rejected. Admin approval swaps the two agents in the active generated schedule assignments only after the backend revalidates that both assignments still exist, are in the same office, both agents have the required skills, both agents are available for the new slots, and the swap does not create duplicate or overlapping assignments.
 
 ### Review Day-Off Requests
 
@@ -238,6 +244,16 @@ Day-off requests can be pending, approved, or rejected. Approval records the req
 4. Review the agent, requested dates, reason, and current status.
 5. For pending requests, add an optional review note and choose Approve or Reject.
 6. After approval, account for the time off manually when generating or adjusting schedules. The app records the approval but does not automatically change existing generated schedules.
+
+### Review Shift-Swap Requests
+
+1. Log in as admin.
+2. Open the admin area.
+3. In Data Preview, open Shift-Swap Requests.
+4. Review the requester, target agent, source shift, target shift, reason, and status.
+5. For pending requests, add an optional review note and choose Approve or Reject.
+6. Approval revalidates the current active generated schedules before changing anything. If the assignments changed, skills no longer match, offices differ, availability no longer fits, or a duplicate/overlapping assignment would be created, the backend refuses the approval and shows the reason in the alert.
+7. After approval, the source assignment contains the target agent and the target assignment contains the requester.
 
 ### Add Demand Forecasts
 
@@ -294,6 +310,7 @@ Note: the manual schedule generation Start and End controls display in the admin
 | App returns to login while you are using it | Session expired, user profile was deleted, or user was disabled | Log in again; if it repeats, ask an admin to verify your Firestore user profile is active |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |
 | Agent shifts disappear after updating schedule visibility code | Older `generated_schedules` documents may not have `status: active` | Mark the intended visible schedules `active`, archive/cancel old schedules, or generate a fresh schedule |
+| Shift-swap approval is refused | The request is stale or would break schedule integrity | Refresh Shift-Swap Requests and review the alert; the backend refuses swaps with skill mismatch, office mismatch, availability conflicts, duplicate assignment, or overlapping assignment |
 | Office save says timezone is invalid | The office timezone is not a real IANA timezone name | Use a value like `Europe/Berlin`, `Europe/London`, or `UTC` |
 | Every timezone is rejected as invalid | The backend virtual environment is missing the `tzdata` package on Windows | Activate `backend\\.venv` and run `pip install -r requirements.txt`, then restart the backend |
 | Office or skill delete is refused | Agents, demand forecasts, or generated schedules still reference the item | Review the alert's reference counts and update/remove dependent records before retrying; deletes do not cascade |

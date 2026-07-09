@@ -22,6 +22,8 @@ import type {
   DemandRow,
   Office,
   ScheduleGenerationResponse,
+  ShiftSwapOption,
+  ShiftSwapRequest,
   Skill,
   TimeWindow,
   UserProfile,
@@ -208,6 +210,11 @@ const formatAvailabilityLabel = (window: TimeWindow): string => {
   return `${day?.shortLabel || `Day ${window.day_of_week}`} ${formatHour(window.start_hour)}-${formatHour(window.end_hour)}`;
 };
 
+const formatSwapShift = (shift: ShiftSwapOption, includeAgent = false): string => {
+  const agent = includeAgent ? `${shift.agent_name} | ` : "";
+  return `${agent}${formatDateTime(shift.slot_start)} - ${formatDateTime(shift.slot_end)} | ${shift.office_name} | ${shift.skill_name}`;
+};
+
 interface AvailabilityEditorProps {
   windows: TimeWindow[];
   onAdd: () => void;
@@ -304,6 +311,9 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [dayOffRequests, setDayOffRequests] = useState<DayOffRequest[]>([]);
   const [dayOffReviewNotes, setDayOffReviewNotes] = useState<Record<string, string>>({});
   const [reviewingDayOffId, setReviewingDayOffId] = useState<string | null>(null);
+  const [shiftSwapRequests, setShiftSwapRequests] = useState<ShiftSwapRequest[]>([]);
+  const [shiftSwapReviewNotes, setShiftSwapReviewNotes] = useState<Record<string, string>>({});
+  const [reviewingShiftSwapId, setReviewingShiftSwapId] = useState<string | null>(null);
 
   const [pendingSkills, setPendingSkills] = useState<PendingSkill[]>([]);
   const [selectedAgentSkillId, setSelectedAgentSkillId] = useState("");
@@ -441,17 +451,19 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
         setSelectedDemandSkillIds(skillRows.map((skill) => skill.id));
 
-        const [agentRows, demand, announcementRows, dayOffRows] = await Promise.all([
+        const [agentRows, demand, announcementRows, dayOffRows, shiftSwapRows] = await Promise.all([
           apiRequest<Agent[]>("/agents"),
           apiRequest<DemandRow[]>("/demand-forecasts"),
           apiRequest<Announcement[]>("/announcements"),
           apiRequest<DayOffRequest[]>("/day-off-requests"),
+          apiRequest<ShiftSwapRequest[]>("/shift-swap-requests"),
         ]);
 
         setAgents(agentRows);
         setDemandRows(demand);
         setAnnouncements(announcementRows);
         setDayOffRequests(dayOffRows);
+        setShiftSwapRequests(shiftSwapRows);
       } catch (error) {
         handleApiError(error, "Failed to initialize admin panel");
       }
@@ -602,6 +614,11 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const reloadDayOffRequests = async () => {
     const rows = await apiRequest<DayOffRequest[]>("/day-off-requests");
     setDayOffRequests(rows);
+  };
+
+  const reloadShiftSwapRequests = async () => {
+    const rows = await apiRequest<ShiftSwapRequest[]>("/shift-swap-requests");
+    setShiftSwapRequests(rows);
   };
 
   const addPendingSkill = () => {
@@ -1173,6 +1190,34 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       handleApiError(error, "Failed to review day-off request");
     } finally {
       setReviewingDayOffId(null);
+    }
+  };
+
+  const reviewShiftSwapRequest = async (request: ShiftSwapRequest, status: "approved" | "rejected") => {
+    clearAdminAlert();
+    setReviewingShiftSwapId(request.id);
+
+    try {
+      await apiRequest<ShiftSwapRequest>(`/shift-swap-requests/${request.id}/review`, {
+        method: "PUT",
+        body: {
+          status,
+          review_note: shiftSwapReviewNotes[request.id]?.trim() || null,
+        },
+      });
+      setShiftSwapReviewNotes((current) => ({ ...current, [request.id]: "" }));
+      setAlert({
+        type: "success",
+        message:
+          status === "approved"
+            ? "Shift-swap request approved and schedule assignments swapped."
+            : "Shift-swap request rejected.",
+      });
+      await Promise.all([reloadShiftSwapRequests(), loadAdminSummary({ preserveAlert: true })]);
+    } catch (error) {
+      handleApiError(error, "Failed to review shift-swap request");
+    } finally {
+      setReviewingShiftSwapId(null);
     }
   };
 
@@ -2543,6 +2588,129 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                                   </td>
                                 </tr>
                               ),
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="accordion-item">
+                    <h2 className="accordion-header">
+                      <button
+                        className="accordion-button collapsed"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#collapseShiftSwapRequests"
+                      >
+                        Shift-Swap Requests
+                      </button>
+                    </h2>
+                    <div id="collapseShiftSwapRequests" className="accordion-collapse collapse" data-bs-parent="#adminDataAccordion">
+                      <div className="accordion-body ccs-table-wrap">
+                        <div className="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3">
+                          <p className="ccs-muted mb-0">
+                            Approval swaps the two agents in active generated schedule assignments after revalidating skills, office,
+                            availability, and duplicate-assignment rules.
+                          </p>
+                          <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => void reloadShiftSwapRequests()}>
+                            Refresh
+                          </button>
+                        </div>
+                        <table className="table table-sm align-middle">
+                          <thead>
+                            <tr>
+                              <th>Requester</th>
+                              <th>Target</th>
+                              <th>Status</th>
+                              <th>Source Shift</th>
+                              <th>Target Shift</th>
+                              <th>Reason</th>
+                              <th>Review Note</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shiftSwapRequests.length ? (
+                              shiftSwapRequests.map((request) => (
+                                <tr key={request.id}>
+                                  <td>
+                                    <div>{request.requester_name}</div>
+                                    <div className="small ccs-muted">{request.requester_email || request.requester_agent_id}</div>
+                                  </td>
+                                  <td>
+                                    <div>{request.target_agent_name}</div>
+                                    <div className="small ccs-muted">{request.target_agent_email || request.target_agent_id}</div>
+                                  </td>
+                                  <td>
+                                    <span
+                                      className={`badge ${
+                                        request.status === "approved"
+                                          ? "text-bg-success"
+                                          : request.status === "rejected"
+                                            ? "text-bg-danger"
+                                            : "text-bg-warning"
+                                      }`}
+                                    >
+                                      {request.status}
+                                    </span>
+                                  </td>
+                                  <td style={{ minWidth: 260 }}>{formatSwapShift(request.source_shift)}</td>
+                                  <td style={{ minWidth: 260 }}>{formatSwapShift(request.target_shift, true)}</td>
+                                  <td style={{ maxWidth: 220 }}>{request.reason || "-"}</td>
+                                  <td style={{ minWidth: 220 }}>
+                                    {request.status === "pending" ? (
+                                      <input
+                                        className="form-control form-control-sm"
+                                        maxLength={500}
+                                        value={shiftSwapReviewNotes[request.id] || ""}
+                                        onChange={(event) =>
+                                          setShiftSwapReviewNotes((current) => ({ ...current, [request.id]: event.target.value }))
+                                        }
+                                        placeholder="Optional note"
+                                      />
+                                    ) : (
+                                      <>
+                                        <div>{request.review_note || "-"}</div>
+                                        <div className="small ccs-muted">
+                                          {request.reviewed_by_name || ""}
+                                          {request.reviewed_at ? ` ${formatDate(request.reviewed_at)}` : ""}
+                                        </div>
+                                      </>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {request.status === "pending" ? (
+                                      <div className="d-flex gap-2">
+                                        <button
+                                          className="btn btn-sm btn-success"
+                                          type="button"
+                                          disabled={reviewingShiftSwapId === request.id}
+                                          onClick={() => void reviewShiftSwapRequest(request, "approved")}
+                                        >
+                                          Approve
+                                        </button>
+                                        <button
+                                          className="btn btn-sm btn-outline-danger"
+                                          type="button"
+                                          disabled={reviewingShiftSwapId === request.id}
+                                          onClick={() => void reviewShiftSwapRequest(request, "rejected")}
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="ccs-muted">Reviewed</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={8} className="ccs-muted">
+                                  No shift-swap requests yet.
+                                </td>
+                              </tr>
                             )}
                           </tbody>
                         </table>

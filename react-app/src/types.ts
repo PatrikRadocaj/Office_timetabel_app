@@ -89,6 +89,54 @@ export interface DayOffRequest {
   updated_at?: string | null;
 }
 
+export type ShiftSwapRequestStatus = "pending" | "approved" | "rejected" | string;
+
+export interface ShiftSwapOption {
+  schedule_id: string;
+  assignment_key: string;
+  agent_id: string;
+  agent_name: string;
+  slot_start: string;
+  slot_end: string;
+  office_id: string;
+  office_name: string;
+  skill_id: string;
+  skill_name: string;
+}
+
+export interface ShiftSwapOptionsResponse {
+  my_shifts: ShiftSwapOption[];
+  target_shifts: ShiftSwapOption[];
+}
+
+export interface ShiftSwapRequest {
+  id: string;
+  requester_agent_id: string;
+  requester_user_id?: string | null;
+  requester_name: string;
+  requester_email?: string | null;
+  target_agent_id: string;
+  target_agent_name: string;
+  target_agent_email?: string | null;
+  source_schedule_id: string;
+  source_assignment_key: string;
+  target_schedule_id: string;
+  target_assignment_key: string;
+  source_shift: ShiftSwapOption;
+  target_shift: ShiftSwapOption;
+  reason?: string | null;
+  status: ShiftSwapRequestStatus;
+  requested_at: string;
+  reviewed_at?: string | null;
+  reviewed_by_user_id?: string | null;
+  reviewed_by_name?: string | null;
+  review_note?: string | null;
+  schedule_impact: string;
+  schedule_update?: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface DemandRow {
   id: string;
   office_id: string;

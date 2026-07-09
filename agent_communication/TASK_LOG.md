@@ -3,6 +3,37 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: FEAT-008 (review)
+- Timestamp: 2026-07-09
+- Current state: Review complete. Verdict: APPROVED WITH FINDINGS — none blocking. This is the highest-risk feature so far (approval mutates generated schedules) and the implementation treats it with appropriate care: full validation at create AND full revalidation at approval, newest-active-wins assignment resolution, and same-schedule swaps applied as one atomic document write. The disclosed non-transactional cross-schedule risk is real and correctly recorded as RISK-011; a concrete hardening path is recommended below.
+- Verification results:
+  1. Options from active schedules: CONFIRMED — `_authoritative_assignment_refs` uses `list_active` with the same newest-wins slot dedup as `/me/shifts`, so options always reflect the currently visible schedule state; `my_shifts` vs same-office `target_shifts`, active agents only, self excluded.
+  2. Own-source-only creation: CONFIRMED — 403 when the requester is not in the source assignment's `assigned_agent_ids`; agent list scoped by `requester_agent_id` equality (no index risk); pinned by test.
+  3. Admin list/approve/reject: CONFIRMED — `require_admin` on both admin routes; per-request review note; only-pending guard (400); reviewer identity stamped.
+  4. Non-admin blocked: CONFIRMED — 401/403 route tests; live checks after restart: options/me/admin routes all 401 unauthenticated.
+  5. Approval swaps agent IDs in assignments: CONFIRMED — `_copy_assignment_with_swapped_agent` replaces the requester/target in place; SAME-schedule swaps rewrite both assignments in ONE document update (atomic); cross-schedule swaps use two updates (finding 1); admin UI refreshes the summary after approval since coverage may shift.
+  6. Stale-request revalidation: CONFIRMED — approval re-resolves refs from active schedules and re-runs the ENTIRE validation matrix; superseded/changed assignments -> 404/409 ("Schedule assignment changed before approval"); deactivated agents -> 409; pinned by `test_approval_revalidates_current_schedule_state`.
+  7. Invalid swaps blocked — office mismatch (409, tested), skill mismatch (409, tested, bidirectional WITH min_proficiency, consistent with the scheduler), availability conflict (409, tested, evaluated office-local via the SCHED-001 `_agent_is_available` logic — good reuse), source/target overlap (409, code-verified), duplicate assignment (409, code-verified), duplicate pending request (409, code-verified). See finding 2 for the two untested paths.
+  8. React agent UI: CONFIRMED — backlog placeholder replaced by a real panel (source/target selects with office/skill/time labels, reason field, request history); errors route through the standard handlers.
+  9. React admin UI: CONFIRMED — Shift-Swap Requests accordion with per-request note + Approve/Reject, approval success message explicitly says "schedule assignments swapped", follows all established patterns.
+  10. Docs match behavior: CONFIRMED — decision D-20260709-010 captures the full validation contract; RISK-011 records the transaction gap honestly; lifecycle + `_resolve_agent_profile` refactor backlog items present; USER_MANUAL agent/admin workflows updated.
+- Findings (ordered by severity — none blocking):
+  1. Medium (disclosed as RISK-011; concrete hardening recommended) — Cross-schedule approvals are two sequential non-transactional writes, and the exposure is broader than concurrent admins: ANY failure between the two updates (quota blip, crash) strands a half-applied swap while the request stays pending — and a retry then 409s ("Schedule assignment changed"), requiring manual Firestore repair. Recommended fast-follow: add a `batch_update` helper to `FirestoreRepository` using `db.batch()` and commit both schedule updates atomically — small change, eliminates both the mid-failure and most of the concurrency exposure. RISK-011 severity is right; the fix is cheaper than the risk suggests.
+  2. Low — Two of the required invalid-swap rejections lack dedicated tests: source/target OVERLAP (409) and DUPLICATE-assignment (409) are implemented but no test exercises them (grep confirms no overlap/duplicate test cases). Add two focused tests; the duplicate-pending 409 could ride along.
+  3. Low — Stale-server incident #4: the running backend predated FEAT-008 and returned 404 for all new routes until restarted (restart performed; routes then 401 as expected). The FEAT-007 protocol note is not preventing this operationally — recommend the local dev server simply run `uvicorn --reload`, which removes the entire failure class.
+  4. Info — Third verbatim copy of `_resolve_agent_profile` (MeService, DayOffRequestService, ShiftSwapRequestService); the existing refactor backlog item now has three call sites and rising.
+  5. Info — `options_for_agent` filters target shifts by the requester's PROFILE office, while validation compares the two ASSIGNMENTS' offices; a requester assigned cross-office would see options inconsistent with what validation accepts. Validation remains authoritative, so no integrity risk; UX edge only.
+  6. Info — Full live end-to-end swap NOT smoked: the `generated_schedules` collection currently has ZERO active documents (pre-SCHED-002 legacy), and a real swap needs an active schedule with two compatible assigned agents. After the user generates a schedule, run ONE live approve to close the loop (the validation matrix itself is unit-tested).
+- Commands run:
+  - `python -m pytest backend/tests` -> 82 passed
+  - `npm run build` -> passed; `npm test` -> 7 passed
+  - Live route checks after worktree restart: `/me/shift-swap-options`, `/me/shift-swap-requests`, `/shift-swap-requests` -> all 401 unauthenticated (were 404 on the stale process)
+- Approval/blocker status: APPROVED — no blockers. FEAT-008 can be committed as a scoped commit (4 new backend files + main.py + tests + DashboardPage/AdminPage/types + docs), excluding `runtime_logs/**`, seed scripts, and `vite.config.ts` as usual.
+- Recommended next step: Codex commits FEAT-008 scoped, adds the two missing rejection tests (finding 2), and takes the `db.batch()` hardening as a named fast-follow task (finding 1); user generates a schedule, then one live swap approve completes the verification loop (finding 6).
+
+## Status Update
 - Agent: Codex
 - Role: Driver
 - Task ID: FEAT-007 closeout
@@ -1446,6 +1477,71 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
   - Route audit via `Select-String` confirmed no remaining automatic admin-to-`/admin` login/session/dashboard redirect; only the intended `/admin` access guard remains.
 - Open issues: None for this task. Runtime logs and Firebase backup remain uncommitted local runtime data from earlier work.
 - Next step: Review in browser with an admin account and continue with the next approved task.
+
+## Status Update
+- Agent: Codex
+- Task ID: BUG-DAYVIEW-FIRESTORE-KEY
+- Timestamp: 2026-07-09 12:08 +02:00
+- Current state: Fixed.
+- Completed:
+  - Reproduced the Load Graph backend failure by calling `DemandService.day_view(...)` directly.
+  - Identified the failing Firestore operation: `list_by_document_id_prefix` compared `FieldPath.document_id()` against plain strings, and the live Firestore client returned `400 __key__ filter value must be a Key`.
+  - Updated `FirestoreRepository.list_by_document_id_prefix` to compare document IDs using collection document references for the lower/upper prefix bounds.
+  - Added a focused repository test covering the document-reference key behavior.
+  - Restarted the local backend on port 8000 so the browser can use the patched code.
+- Files touched:
+  - `agent_communication/TASK_LOG.md`
+  - `call-center-scheduler/backend/app/repositories/firestore_repository.py`
+  - `call-center-scheduler/backend/tests/test_firestore_repository.py`
+- Commands/tests run:
+  - Direct backend service check for `idnow_berlin_ident_center`, `2026-07-09`, 30-minute day view -> `OK 48 None`
+  - `python -m pytest backend\tests\test_firestore_repository.py` -> 5 passed
+  - `python -m pytest backend\tests\test_firestore_repository.py backend\tests\test_demand_compact_storage.py` -> 12 passed
+  - `python -m pytest backend\tests` -> 83 passed
+  - Backend restart and `GET http://127.0.0.1:8000/api/health` -> 200
+- Known issues:
+  - Firestore still emits a non-blocking warning about positional `where(...)` arguments; this does not block Load Graph.
+- Open questions: None.
+- Next step: User reloads the admin page and presses Load Graph again.
+
+## Status Update
+- Agent: Codex
+- Task ID: FEAT-008
+- Timestamp: 2026-07-09 12:00 +02:00
+- Current state: Done; ready for QA review.
+- Completed:
+  - Added backend shift-swap request model, Firestore repository, service, and routes.
+  - Added agent endpoints: `GET /api/v1/me/shift-swap-options`, `GET /api/v1/me/shift-swap-requests`, and `POST /api/v1/me/shift-swap-requests`.
+  - Added admin endpoints: `GET /api/v1/shift-swap-requests` and `PUT /api/v1/shift-swap-requests/{request_id}/review`.
+  - Defined eligibility rules: source must be assigned to requester; target must be assigned to selected target agent; both shifts must be active visible assignments, same office, non-overlapping, skill-compatible, availability-compatible, and duplicate/overlap safe.
+  - Admin approval revalidates the current active visible schedule state, then swaps the two agent IDs in the generated schedule assignments. Rejection records status only.
+  - Replaced the agent Request Shift Swap backlog message with a real React form and request history.
+  - Added React admin review UI under Data Preview -> Shift-Swap Requests with approve/reject actions and optional review notes.
+  - Recorded decision `D-20260709-010` and updated user documentation.
+- Files touched:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `call-center-scheduler/backend/app/main.py`
+  - `call-center-scheduler/backend/app/api/routers/shift_swap_requests.py`
+  - `call-center-scheduler/backend/app/models/shift_swap_request.py`
+  - `call-center-scheduler/backend/app/repositories/shift_swap_requests_repository.py`
+  - `call-center-scheduler/backend/app/services/shift_swap_request_service.py`
+  - `call-center-scheduler/backend/tests/test_shift_swap_requests.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `react-app/src/types.ts`
+- Commands/tests run:
+  - `python -m pytest backend\tests\test_shift_swap_requests.py` -> 12 passed
+  - `python -m pytest backend\tests` -> 82 passed
+  - `npm run build` from `react-app` -> passed; Vite reported the existing large chunk warning
+- Decisions made:
+  - `D-20260709-010`: shift-swap approval mutates generated schedule assignments only after revalidating active visible assignments, same-office constraint, skill compatibility, availability, and duplicate/overlap safety.
+- Known issues:
+  - Shift-swap approval updates generated schedule documents outside a Firestore transaction; concurrent admin approvals against the same assignments should be reviewed before production use.
+  - Shift-swap requests do not yet support requester cancel, target-agent acknowledgement, or retention/purge controls.
+- Open questions: None for this first shift-swap workflow.
+- Next step: Claude QA review of FEAT-008, including manual smoke with an agent and admin if Firestore quota allows.
 
 ## Status Update
 - Agent: Codex

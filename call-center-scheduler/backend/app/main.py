@@ -10,7 +10,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routers import agents, announcements, auth, dashboard, day_off_requests, demand, me, offices, schedules, skills
+from app.api.routers import (
+    agents,
+    announcements,
+    auth,
+    dashboard,
+    day_off_requests,
+    demand,
+    me,
+    offices,
+    schedules,
+    shift_swap_requests,
+    skills,
+)
 from app.core.config import get_settings
 from app.core.exceptions import DependencyUnavailableError
 from app.core.firebase import initialize_firebase
@@ -45,6 +57,9 @@ app.include_router(me.router, prefix=settings.api_v1_prefix)
 app.include_router(announcements.router, prefix=settings.api_v1_prefix)
 app.include_router(day_off_requests.me_router, prefix=settings.api_v1_prefix)
 app.include_router(day_off_requests.admin_router, prefix=settings.api_v1_prefix)
+app.include_router(shift_swap_requests.options_router, prefix=settings.api_v1_prefix)
+app.include_router(shift_swap_requests.me_router, prefix=settings.api_v1_prefix)
+app.include_router(shift_swap_requests.admin_router, prefix=settings.api_v1_prefix)
 
 react_dist_candidates = [
     Path(__file__).resolve().parents[3] / "react-app" / "dist",

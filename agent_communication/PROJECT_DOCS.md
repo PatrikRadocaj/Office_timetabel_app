@@ -91,8 +91,10 @@ C:\Users\User\Desktop\web projekt\
 | FEAT-002 | Expose admin summary and schedule generation in React | Done | Codex | Admin page now loads dashboard summary, generates schedules, and displays assignment coverage results |
 | FEAT-003 | Add edit/delete UI for admin catalog data | Done | Codex | Admin data preview now supports inline edit and confirmed delete for offices, skills, and agents |
 | FEAT-004 | Add agent availability management in React | Done | Codex | Admin agent create/edit now sends and displays office-local weekday/hour availability windows |
-| FEAT-006 | Implement agent dashboard quick actions | Done | Codex | View All My Shifts, Update Availability, and Request Day Off are real agent-facing flows; shift-swap request workflow is backlogged |
+| FEAT-006 | Implement agent dashboard quick actions | Done | Codex | View All My Shifts, Update Availability, Request Day Off, and Request Shift Swap are real agent-facing flows |
 | FEAT-007 | Implement day-off request workflow | Done | Codex | Agents can create/list own requests; admins can list and approve/reject requests; approval records status only and does not mutate schedules |
+| FEAT-008 | Implement shift-swap request workflow | Done | Codex | Agents can request swaps from active same-office shifts; admins can approve/reject; approval revalidates and swaps generated schedule assignments |
+| SCHED-003 | Atomic shift-swap application | Proposed | Codex/Claude | Add a Firestore `batch_update` helper and apply cross-schedule swap approvals atomically before production use; today any mid-failure between the two writes can strand a half-applied swap while the request stays pending and retries 409 |
 | DATA-003 | Compact demand forecast storage | Done | Codex | Daily demand saves now write one Firestore document per office/date/interval and expand to slots only in memory |
 | DATA-004 | Migrate legacy demand slot documents to compact storage | Done | Codex | Legacy per-slot demand documents were backed up, compacted into 35 daily documents, and deleted from Firestore |
 | DATA-005 | Reduce Firestore read volume for dashboard counts and daily demand | Done | Codex | Dashboard totals use Firestore aggregation counts; dashboard coverage loads only latest five schedules; daily demand replace/day-view use deterministic compact document ID prefix lookups |
@@ -129,6 +131,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260709-007 | 2026-07-09 | Accepted | Compact demand storage supports only 30/60-minute slots; priority is per skill-day; same-slot single, bulk, and CSV re-posts replace quantity instead of accumulating. | One daily document per office/date/interval keeps Firestore usage low and makes admin edits deterministic. Additive stacking remains available only through suffixed daily documents when `replace_existing_day=false`. | Codex |
 | D-20260709-008 | 2026-07-09 | Accepted | Personal dashboards, agent shift lists, admin summary coverage, and demand day coverage use only generated schedules with `status: active`; `cancelled` and `archived` schedules are retained but ignored. | This makes the intended visible schedule set explicit and avoids reading every historical generated schedule forever. Within the active set, the newest active schedule still overrides older active assignments for the same slot. | Codex |
 | D-20260709-009 | 2026-07-09 | Accepted | Day-off requests use an approval workflow where approval records the request status only; generated schedules and assignments are not changed automatically. | This gives agents and admins a real auditable request workflow without silently changing schedule assignments before a separate schedule-impact policy is designed. | Codex |
+| D-20260709-010 | 2026-07-09 | Accepted | Shift-swap requests mutate generated schedules only on admin approval, and approval must revalidate that both active visible assignments still exist, are in the same office, match both agents' skills, fit both agents' availability, and do not create overlapping or duplicate assignments. | Shift swaps are intended to be operational changes, but schedule integrity must be preserved against stale requests and invalid cross-skill/cross-office swaps. | Codex |
 ## Known Issues And Risks
 
 | ID | Area | Issue/Risk | Severity | Status | Notes |
@@ -143,6 +146,7 @@ C:\Users\User\Desktop\web projekt\
 | RISK-008 | Firebase | Firestore quota for project `scheduler-app-54991` can be exhausted during repeated admin/API smoke testing. | Medium | Monitoring | Compact demand storage reduces future pressure; legacy slot documents were migrated/deleted on 2026-07-08. Dashboard counts now use aggregation counts, dashboard coverage loads only the latest five schedules, and daily demand day operations use deterministic document ID prefix lookups. |
 | RISK-009 | Data migration | Generated schedule documents created before SCHED-002 may not have a `status` field. | Medium | Open | New reads use `status == active`; mark legacy schedules `active`, archive them, or regenerate schedules during deployment depending on whether they should remain visible. |
 | RISK-010 | Scheduling | Approved day-off requests do not automatically remove assignments or regenerate schedules. | Medium | Open | This is the accepted first workflow policy for FEAT-007; admins must account for approved requests manually until schedule-impact automation is designed. |
+| RISK-011 | Scheduling | Shift-swap approval updates generated schedule documents outside a Firestore transaction. | Medium | Open | Current implementation revalidates before updating and supports same-schedule or two-schedule swaps, but any failure between cross-schedule writes can strand a half-applied swap while the request stays pending and retries 409. Fix with SCHED-003 before production use. |
 ## Next Steps / Backlog
 
 1. User reviews and approves or revises the collaboration protocol.
@@ -162,11 +166,12 @@ C:\Users\User\Desktop\web projekt\
 15. After Firestore quota recovers, run one targeted live check (one day-view load or one replace-day save) to confirm the `FieldPath.document_id()` prefix range query works against the real Firestore client, not only the test fakes.
 16. Add day-off request lifecycle controls: agent-side cancel for pending requests, plus an admin purge or retention workflow so old request documents do not accumulate forever.
 17. Add day-off request validation for overlapping, duplicate, and past-date requests, or record a product decision that admins handle those cases manually.
-18. Refactor the duplicated `_resolve_agent_profile` logic from `MeService` and `DayOffRequestService` into a shared helper on the next touch.
+18. Add shift-swap lifecycle controls: agent-side cancel for pending requests, target-agent acknowledgement if the product requires it, and retention/purge rules for old requests.
 19. Extend the day-off request workflow with an approved schedule-impact policy, such as warning on conflicts, assignment removal, or explicit regeneration flow.
-20. Design and implement shift-swap request workflow: request model, eligible target shift/agent selection, approval flow, and schedule update policy.
-21. Update the task board with the first approved development task.
-22. Keep the user manual current as features stabilize.
+20. Refactor the duplicated `_resolve_agent_profile` logic from `MeService`, `DayOffRequestService`, and `ShiftSwapRequestService` into a shared helper on the next touch.
+21. Implement SCHED-003 before production use: add a `batch_update` helper to `FirestoreRepository` using `db.batch()` and apply cross-schedule shift swaps atomically.
+22. Update the task board with the first approved development task.
+23. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 
