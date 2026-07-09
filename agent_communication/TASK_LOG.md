@@ -5,6 +5,29 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 ## Status Update
 - Agent: Codex
 - Role: Driver
+- Task ID: SCHED-002 + DATA-006 closeout reconciliation
+- Timestamp: 2026-07-09 12:40:00 +02:00
+- Current state: Closeout already complete in git before this prompt was re-run. No code changes were needed.
+- Reconciliation:
+  - SCHED-002 implementation commit: `6a2e071` (`fix: use only active schedules for visibility`)
+  - DATA-006 implementation commit: `b8c1ea1` (`fix: harden compact demand documents`)
+  - Closeout/task-log commit: `1f657ff` (`docs: record data-006 and sched-002 closeout`)
+  - The optional empty-string `office_id` hardening from Claude finding 1 is already included in `b8c1ea1`, with the added malformed-document test.
+  - The user prompt requested SCHED-002 before DATA-006, but the actual implementation history is already the reverse order. This note records the real committed hashes instead of rewriting history.
+- Backend/runtime:
+  - Backend on `127.0.0.1:8000` is running from the committed worktree.
+  - `GET /api/health` on 2026-07-09 returned `200`.
+- Reminder for deployment/use:
+  - The live `generated_schedules` collection currently has ZERO documents with `status: active` because existing rows predate SCHED-002.
+  - Coverage views and agent shift lists will stay empty until the first post-deploy step is completed: generate a new schedule, or migrate legacy schedule documents per backlog item 13.
+- Out-of-scope local files still intentionally left uncommitted:
+  - `react-app/vite.config.ts` line-ending-only change
+  - `call-center-scheduler/scripts/populate_current_week_idnow_demand.py`
+  - `call-center-scheduler/scripts/reset_idnow_demo_firestore.py`
+
+## Status Update
+- Agent: Codex
+- Role: Driver
 - Task ID: DATA-006 + SCHED-002 closeout
 - Timestamp: 2026-07-09 12:26:00 +02:00
 - Current state: Complete. The pending worktree was split into two scoped implementation commits: DATA-006 and SCHED-002. The earlier TZ-001 gate is already satisfied by the existing commits `95c2ed3` and `3aa0484`.
