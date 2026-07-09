@@ -94,6 +94,7 @@ C:\Users\User\Desktop\web projekt\
 | FEAT-006 | Implement agent dashboard quick actions | Done | Codex | View All My Shifts and Update Availability are real agent-facing flows; day-off and shift-swap request workflows are backlogged |
 | DATA-003 | Compact demand forecast storage | Done | Codex | Daily demand saves now write one Firestore document per office/date/interval and expand to slots only in memory |
 | DATA-004 | Migrate legacy demand slot documents to compact storage | Done | Codex | Legacy per-slot demand documents were backed up, compacted into 35 daily documents, and deleted from Firestore |
+| DATA-005 | Reduce Firestore read volume for dashboard counts and daily demand | Done | Codex | Dashboard totals use Firestore aggregation counts; dashboard coverage loads only latest five schedules; daily demand replace/day-view use deterministic compact document ID prefix lookups |
 | SCHED-001 | Match availability windows in office-local time | Done | Claude | Scheduler localizes availability and shift-preference hours to the agent's office timezone; midnight-ending slot leak fixed; TimeWindow now validated server-side; manual Munich smoke passed 2026-07-09 |
 | FEAT-005 | Announcements admin management | Done | Claude | New admin-only `/api/v1/announcements` CRUD API plus React admin UI to create, edit, activate/deactivate, and delete announcements; agent dashboards keep showing active announcements; manual smoke passed 2026-07-09 |
 | SEC-001 | Fix Firebase credential and runtime log git hygiene | Done | Codex | Removed tracked local service-account/runtime-log paths from the git index, added ignore rules, and documented local-only credential setup plus key rotation guidance |
@@ -115,6 +116,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260708-009 | 2026-07-08 | Accepted | The scheduler evaluates availability windows and shift-preference day/night hours in the AGENT'S office timezone (not UTC, not the demand office). | Availability windows are entered per agent and documented as office-local; using the agent's own office keeps the contract true even if an agent is assigned to another office's demand. | Claude |
 | D-20260709-001 | 2026-07-09 | Accepted | All `/api/v1/announcements` routes, including list, are admin-only; agents receive active announcements exclusively through `/api/v1/me/dashboard`. | The management list exposes inactive drafts, so it belongs to the admin surface; the dashboard already filters to the newest 10 active announcements. | Claude |
 | D-20260709-002 | 2026-07-09 | Accepted | Agents can directly update their own availability through `/api/v1/me/availability`; day-off and shift-swap actions require a future request/approval model before implementation. | Availability is already part of the agent scheduling profile, while day-off and swap requests need workflow state, reviewer actions, and schedule-impact handling. | Codex |
+| D-20260709-003 | 2026-07-09 | Accepted | Use Firestore aggregation counts for dashboard document totals and deterministic document ID prefix lookups for compact daily demand day operations. | These reads avoid streaming whole collections for counts or single-day demand views while preserving the compact daily demand storage model and suffixed additive documents. | Codex |
 
 ## Known Issues And Risks
 
@@ -127,7 +129,7 @@ C:\Users\User\Desktop\web projekt\
 | RISK-005 | QA freshness | Existing QA reports are from 2026-05-09. | Medium | Open | Run a fresh baseline after protocol approval and before major development. |
 | RISK-006 | Routing | FastAPI currently serves React only for `/`, `/dashboard`, and `/admin`. | Low | Open | Add an SPA catch-all when new React routes are introduced so direct navigation does not 404. |
 | RISK-007 | Role UX | Admins have both employee-dashboard and admin-panel access. | Low | Monitoring | Keep `/admin` protected; do not reintroduce automatic redirects away from `/dashboard`. |
-| RISK-008 | Firebase | Firestore quota for project `scheduler-app-54991` can be exhausted during repeated admin/API smoke testing. | Medium | Monitoring | Compact demand storage reduces future pressure; legacy slot documents were migrated/deleted on 2026-07-08. |
+| RISK-008 | Firebase | Firestore quota for project `scheduler-app-54991` can be exhausted during repeated admin/API smoke testing. | Medium | Monitoring | Compact demand storage reduces future pressure; legacy slot documents were migrated/deleted on 2026-07-08. Dashboard counts now use aggregation counts, dashboard coverage loads only the latest five schedules, and daily demand day operations use deterministic document ID prefix lookups. |
 
 ## Next Steps / Backlog
 
@@ -151,10 +153,11 @@ C:\Users\User\Desktop\web projekt\
 18. Harden compact demand expansion so malformed documents missing `forecast_date` or `interval_minutes` are skipped with a log entry instead of raising a 500.
 19. Keep demand manual copy clear that `replace_existing_day=false` writes suffixed documents and stacks demand additively.
 20. Refactor compact demand seed/migration scripts to reuse `DemandService._daily_document_payload` and avoid schema drift.
-21. Design and implement day-off request workflow: request model, agent create/list status, admin review/approve/reject, and scheduler/schedule-impact handling.
-22. Design and implement shift-swap request workflow: request model, eligible target shift/agent selection, approval flow, and schedule update policy.
-23. Update the task board with the first approved development task.
-24. Keep the user manual current as features stabilize.
+21. After Firestore quota recovers, run one targeted live check (one day-view load or one replace-day save) to confirm the `FieldPath.document_id()` prefix range query works against the real Firestore client, not only the test fakes.
+22. Design and implement day-off request workflow: request model, agent create/list status, admin review/approve/reject, and scheduler/schedule-impact handling.
+23. Design and implement shift-swap request workflow: request model, eligible target shift/agent selection, approval flow, and schedule update policy.
+24. Update the task board with the first approved development task.
+25. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 

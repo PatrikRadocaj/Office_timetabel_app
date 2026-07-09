@@ -31,13 +31,13 @@ class DashboardService:
         self.schedules_repo = SchedulesRepository()
 
     def summary(self, start_at: datetime | None = None, end_at: datetime | None = None) -> dict[str, Any]:
-        schedules = self.schedules_repo.list(order_by="generated_at")
+        schedules = list(reversed(self.schedules_repo.list(order_by="-generated_at", limit=5)))
         coverage_points: list[dict[str, Any]] = []
 
         start_utc = _as_utc(start_at) if start_at else None
         end_utc = _as_utc(end_at) if end_at else None
 
-        for schedule in schedules[-5:]:
+        for schedule in schedules:
             for assignment in schedule.get("assignments", []):
                 slot_start = _as_utc(assignment["slot_start"])
                 if start_utc and slot_start < start_utc:
@@ -57,9 +57,9 @@ class DashboardService:
                 )
 
         return {
-            "total_agents": len(self.agents_repo.list()),
-            "total_offices": len(self.offices_repo.list()),
-            "total_skills": len(self.skills_repo.list()),
-            "active_schedule_count": len(schedules),
+            "total_agents": self.agents_repo.count(),
+            "total_offices": self.offices_repo.count(),
+            "total_skills": self.skills_repo.count(),
+            "active_schedule_count": self.schedules_repo.count(),
             "coverage_points": coverage_points,
         }

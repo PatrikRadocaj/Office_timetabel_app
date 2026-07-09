@@ -3,6 +3,64 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: DATA-005 (review)
+- Timestamp: 2026-07-09
+- Current state: Review complete. Verdict: APPROVED WITH FINDINGS — none blocking. The read-volume design is correct, well-tested, and behavior-preserving; findings are one cheap hardening suggestion on the delete path plus dormant/informational notes. No live Firestore operations were run during this review.
+- QA-focus confirmations:
+  1. `count()` aggregation + error transparency: CONFIRMED — uses `query.count(alias="total")` when the client supports it (test proves the alias is used and `stream()` is NOT called), falls back to streaming only for old/test clients or unsupported result shapes. Firestore API/quota errors are NOT hidden: `GoogleAPICallError`/`RetryError` (including `ResourceExhausted`) propagate through `_wrap_firestore_error` to the existing 503 with the quota-specific message.
+  2. Dashboard totals no longer stream collections: CONFIRMED — `total_agents`/`total_offices`/`total_skills`/`active_schedule_count` all use `count()`; the regression test makes `list()` raise if the service touches it for totals.
+  3. Coverage behavior preserved with latest-5 fetch: CONFIRMED — the previous code already sliced `schedules[-5:]` after streaming ALL schedules ascending; the new `list(order_by="-generated_at", limit=5)` + `reversed()` yields the identical set in the identical order, and `active_schedule_count` (previously `len(all)`) is preserved via `count()`. The descending `order_by` support added to `FirestoreRepository.list()` is backward-compatible (no existing caller passes a `-` prefix).
+  4. Suffixed additive docs not missed: CONFIRMED — additive docs are named `{deterministic_base}_{hex}`, so the prefix range query (`>= prefix`, `< prefix + `) includes them; test proves day_view aggregates base + suffix demand (1+2=3).
+  5. Replace deletes base + suffixed docs: CONFIRMED — test proves `deleted == [base, suffix]` while the adjacent day's document survives, and `deleted_count` reflects both.
+  6. No quota-heavy operations introduced: CONFIRMED — no new scripts; every change strictly reduces reads (aggregation counts ~1 read/1000 docs vs full streams; day operations read only the day's documents instead of the office's entire collection); the only read-heavy paths are explicit fallbacks for clients lacking the features.
+  7. Docs/task log accurate; USER_MANUAL correctly untouched: CONFIRMED — PROJECT_DOCS has the DATA-005 row, decision D-20260709-003, and the RISK-008 mitigation note; response payloads and UI behavior are unchanged, so no user-manual update is needed. Task log claims match the diff and test results.
+- Findings (ordered by severity):
+  1. Low — Prefix-collision hardening for the DELETE path: `list_by_document_id_prefix(base)` matches ANY document id starting with the base string. An office id that textually extends another office's id can collide (e.g. offices `berlin` and `berlin_30x`: `daily_{date}_berlin_30x_30` starts with `daily_{date}_berlin_30`), so a replace-day for one office could delete another office's demand document. No current seeded ids collide, but since this feeds deletion, add a one-line safety filter on the fetched documents (keep only rows whose `office_id`/`forecast_date`/`interval_minutes` fields match) — cheap insurance that makes the delete provably scoped.
+  2. Low (dormant) — Legacy-row regression in replace/day_view: the old field-filter approach also matched LEGACY daily_grid slot rows (random ids) for cleanup and display; the prefix approach only sees deterministically-named compact docs. Moot post-DATA-004 (collection is compact-only) and consistent with previously recorded dormant legacy caveats; note for backup-restore scenarios.
+  3. Info — The `FieldPath.document_id()` prefix range query is not exercised against a real Firestore client anywhere in the test suite (fakes reimplement it). After quota recovery, one targeted live check (a single day_view or replace-day save) would confirm the installed client accepts plain string ids for `__name__` range comparisons.
+  4. Info — When the aggregation result shape is unrecognized, `count()` silently falls back to a full stream; correct but read-heavy. A debug log line would make such regressions observable.
+  5. Info — The `schedules[-5:]` slice in `summary()` is now redundant (the fetch is already limited to 5); harmless.
+  6. Info — Commit hygiene: DATA-005 shares the dirty worktree with the uncommitted FEAT-006 quick-actions work (`me.py`, `models/me.py`, `me_service.py`, `DashboardPage.tsx`, `types.ts`, `test_me_quick_actions.py`). Both are marked Done in PROJECT_DOCS but neither is committed — they should land as two separate scoped commits.
+- Commands run:
+  - `python -m pytest backend/tests` -> 45 passed (matches Codex's claim)
+  - Static review of all listed files via git diff; no Firestore operations executed
+- Approval/blocker status: APPROVED — no blockers. Recommended: apply finding 1's safety filter before or with the DATA-005 commit; findings 2-5 are notes/backlog.
+- Recommended next step: Codex applies the finding-1 field filter (with a small collision test), commits DATA-005 and FEAT-006 as separate scoped commits, and schedules the single targeted live check from finding 3 after Firestore quota recovers.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: DATA-005 Firestore read-volume reduction
+- Timestamp: 2026-07-09 10:06:11 +02:00
+- Current state: Complete; backend read-volume optimizations implemented and verified. Changes are not committed.
+- Completed:
+  - Added `FirestoreRepository.count()` using Firestore aggregation count when the installed client supports it, with stream-count fallback for older/test clients.
+  - Added `FirestoreRepository.list_by_document_id_prefix()` for deterministic document ID prefix queries.
+  - Updated `DashboardService.summary()` so agent, office, skill, and generated-schedule totals use `count()` instead of streaming full collections just to count documents.
+  - Updated dashboard coverage loading to request only the latest five generated schedules instead of listing all generated schedules and slicing locally.
+  - Updated `DemandService.create_daily()` replace-existing deletion and `day_view()` to load compact daily demand documents by deterministic ID prefix instead of listing every demand document for an office and filtering in Python.
+  - Preserved additive non-replace daily demand behavior: suffixed documents still share the deterministic base prefix and are included in day views and replace-existing cleanup.
+  - Added focused unit tests for aggregation count behavior, dashboard count usage, and deterministic daily demand prefix reads.
+- Files changed for this task:
+  - `call-center-scheduler/backend/app/repositories/firestore_repository.py`
+  - `call-center-scheduler/backend/app/services/dashboard_service.py`
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/tests/test_firestore_repository.py`
+  - `call-center-scheduler/backend/tests/test_dashboard_summary_counts.py`
+  - `call-center-scheduler/backend/tests/test_demand_compact_storage.py`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+- Verification:
+  - `python -m pytest backend\tests\test_firestore_repository.py backend\tests\test_dashboard_summary_counts.py backend\tests\test_demand_compact_storage.py` from `call-center-scheduler` -> 7 passed.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 45 passed.
+- User manual: Not updated; no user-visible behavior changed.
+- Open issues:
+  - No live Firestore scripts were run, per task constraint.
+  - Existing unrelated dirty work remains in the worktree from prior tasks/security hygiene and was not modified intentionally by this task.
+
+## Status Update
 - Agent: Codex
 - Role: Driver
 - Task ID: SEC-001 closeout

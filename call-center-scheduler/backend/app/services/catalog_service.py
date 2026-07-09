@@ -250,13 +250,7 @@ class DemandService:
 
         deleted_count = 0
         if payload.replace_existing_day:
-            existing_rows = self.repo.list(filters=[("office_id", "==", payload.office_id)])
-            rows_to_delete = [
-                row
-                for row in existing_rows
-                if row.get("forecast_date") == forecast_date and int(row.get("interval_minutes", interval)) == interval
-            ]
-            for row in rows_to_delete:
+            for row in self._list_daily_documents(payload.office_id, forecast_date, interval):
                 if self.repo.delete(row["id"]):
                     deleted_count += 1
 
@@ -352,12 +346,10 @@ class DemandService:
 
         target_date = forecast_date.isoformat()
         office_cache = {office_id: office}
-        rows = self._expand_documents(self.repo.list(filters=[("office_id", "==", office_id)]), office_cache)
-        day_rows = [
-            row
-            for row in rows
-            if row.get("forecast_date") == target_date and int(row.get("interval_minutes", interval_minutes)) == interval_minutes
-        ]
+        day_rows = self._expand_documents(
+            self._list_daily_documents(office_id, target_date, interval_minutes),
+            office_cache,
+        )
 
         slot_count = (24 * 60) // interval_minutes
         office_tz = self._resolve_office_timezone(office)
@@ -485,6 +477,33 @@ class DemandService:
     @staticmethod
     def _represented_slot_count(skill_demands: list[Any]) -> int:
         return sum(1 for entry in skill_demands for qty in entry.quantities if int(qty) > 0)
+
+    def _list_daily_documents(self, office_id: str, forecast_date: str, interval_minutes: int) -> list[dict[str, Any]]:
+        prefix = self._daily_document_id(office_id, forecast_date, interval_minutes)
+        if hasattr(self.repo, "list_by_document_id_prefix"):
+            documents = self.repo.list_by_document_id_prefix(prefix)
+        else:
+            documents = self.repo.list(
+                filters=[
+                    ("office_id", "==", office_id),
+                    ("forecast_date", "==", forecast_date),
+                    ("interval_minutes", "==", interval_minutes),
+                ],
+            )
+
+        filtered: list[dict[str, Any]] = []
+        for document in documents:
+            if str(document.get("office_id")) != office_id:
+                continue
+            if str(document.get("forecast_date")) != forecast_date:
+                continue
+            try:
+                if int(document.get("interval_minutes")) != int(interval_minutes):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            filtered.append(document)
+        return filtered
 
     def _upsert_daily_document(self, document_id: str, data: dict[str, Any]) -> dict[str, Any]:
         existing = self.repo.get(document_id)
