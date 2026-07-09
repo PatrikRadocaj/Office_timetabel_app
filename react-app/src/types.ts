@@ -66,6 +66,29 @@ export interface Announcement {
   updated_at?: string | null;
 }
 
+export type DayOffRequestStatus = "pending" | "approved" | "rejected" | string;
+
+export interface DayOffRequest {
+  id: string;
+  agent_id: string;
+  user_id?: string | null;
+  email?: string | null;
+  full_name: string;
+  office_id?: string | null;
+  start_date: string;
+  end_date: string;
+  reason?: string | null;
+  status: DayOffRequestStatus;
+  requested_at: string;
+  reviewed_at?: string | null;
+  reviewed_by_user_id?: string | null;
+  reviewed_by_name?: string | null;
+  review_note?: string | null;
+  schedule_impact: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface DemandRow {
   id: string;
   office_id: string;

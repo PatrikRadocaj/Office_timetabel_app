@@ -17,6 +17,7 @@ import type {
   Agent,
   Announcement,
   DashboardSummary,
+  DayOffRequest,
   DemandDayView,
   DemandRow,
   Office,
@@ -300,6 +301,9 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [demandRows, setDemandRows] = useState<DemandRow[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [dayOffRequests, setDayOffRequests] = useState<DayOffRequest[]>([]);
+  const [dayOffReviewNotes, setDayOffReviewNotes] = useState<Record<string, string>>({});
+  const [reviewingDayOffId, setReviewingDayOffId] = useState<string | null>(null);
 
   const [pendingSkills, setPendingSkills] = useState<PendingSkill[]>([]);
   const [selectedAgentSkillId, setSelectedAgentSkillId] = useState("");
@@ -437,15 +441,17 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
         setSelectedDemandSkillIds(skillRows.map((skill) => skill.id));
 
-        const [agentRows, demand, announcementRows] = await Promise.all([
+        const [agentRows, demand, announcementRows, dayOffRows] = await Promise.all([
           apiRequest<Agent[]>("/agents"),
           apiRequest<DemandRow[]>("/demand-forecasts"),
           apiRequest<Announcement[]>("/announcements"),
+          apiRequest<DayOffRequest[]>("/day-off-requests"),
         ]);
 
         setAgents(agentRows);
         setDemandRows(demand);
         setAnnouncements(announcementRows);
+        setDayOffRequests(dayOffRows);
       } catch (error) {
         handleApiError(error, "Failed to initialize admin panel");
       }
@@ -591,6 +597,11 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const reloadAnnouncements = async () => {
     const rows = await apiRequest<Announcement[]>("/announcements");
     setAnnouncements(rows);
+  };
+
+  const reloadDayOffRequests = async () => {
+    const rows = await apiRequest<DayOffRequest[]>("/day-off-requests");
+    setDayOffRequests(rows);
   };
 
   const addPendingSkill = () => {
@@ -1134,6 +1145,34 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       await reloadAnnouncements();
     } catch (error) {
       handleApiError(error, "Failed to delete announcement");
+    }
+  };
+
+  const reviewDayOffRequest = async (request: DayOffRequest, status: "approved" | "rejected") => {
+    clearAdminAlert();
+    setReviewingDayOffId(request.id);
+
+    try {
+      await apiRequest<DayOffRequest>(`/day-off-requests/${request.id}/review`, {
+        method: "PUT",
+        body: {
+          status,
+          review_note: dayOffReviewNotes[request.id]?.trim() || null,
+        },
+      });
+      setDayOffReviewNotes((current) => ({ ...current, [request.id]: "" }));
+      setAlert({
+        type: "success",
+        message:
+          status === "approved"
+            ? "Day-off request approved. Schedules were not changed automatically."
+            : "Day-off request rejected.",
+      });
+      await reloadDayOffRequests();
+    } catch (error) {
+      handleApiError(error, "Failed to review day-off request");
+    } finally {
+      setReviewingDayOffId(null);
     }
   };
 
@@ -2504,6 +2543,126 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                                   </td>
                                 </tr>
                               ),
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="accordion-item">
+                    <h2 className="accordion-header">
+                      <button
+                        className="accordion-button collapsed"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#collapseDayOffRequests"
+                      >
+                        Day-Off Requests
+                      </button>
+                    </h2>
+                    <div id="collapseDayOffRequests" className="accordion-collapse collapse" data-bs-parent="#adminDataAccordion">
+                      <div className="accordion-body ccs-table-wrap">
+                        <div className="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3">
+                          <p className="ccs-muted mb-0">
+                            Approval records the request status only. Generated schedules and assignments are not changed automatically.
+                          </p>
+                          <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => void reloadDayOffRequests()}>
+                            Refresh
+                          </button>
+                        </div>
+                        <table className="table table-sm align-middle">
+                          <thead>
+                            <tr>
+                              <th>Agent</th>
+                              <th>Dates</th>
+                              <th>Status</th>
+                              <th>Reason</th>
+                              <th>Requested</th>
+                              <th>Review Note</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dayOffRequests.length ? (
+                              dayOffRequests.map((request) => (
+                                <tr key={request.id}>
+                                  <td>
+                                    <div>{request.full_name}</div>
+                                    <div className="small ccs-muted">{request.email || request.agent_id}</div>
+                                  </td>
+                                  <td>
+                                    {formatDate(request.start_date)}
+                                    {request.end_date !== request.start_date ? ` - ${formatDate(request.end_date)}` : ""}
+                                  </td>
+                                  <td>
+                                    <span
+                                      className={`badge ${
+                                        request.status === "approved"
+                                          ? "text-bg-success"
+                                          : request.status === "rejected"
+                                            ? "text-bg-danger"
+                                            : "text-bg-warning"
+                                      }`}
+                                    >
+                                      {request.status}
+                                    </span>
+                                  </td>
+                                  <td style={{ maxWidth: 260 }}>{request.reason || "-"}</td>
+                                  <td>{formatDate(request.requested_at)}</td>
+                                  <td style={{ minWidth: 220 }}>
+                                    {request.status === "pending" ? (
+                                      <input
+                                        className="form-control form-control-sm"
+                                        maxLength={500}
+                                        value={dayOffReviewNotes[request.id] || ""}
+                                        onChange={(event) =>
+                                          setDayOffReviewNotes((current) => ({ ...current, [request.id]: event.target.value }))
+                                        }
+                                        placeholder="Optional note"
+                                      />
+                                    ) : (
+                                      <>
+                                        <div>{request.review_note || "-"}</div>
+                                        <div className="small ccs-muted">
+                                          {request.reviewed_by_name || ""}
+                                          {request.reviewed_at ? ` ${formatDate(request.reviewed_at)}` : ""}
+                                        </div>
+                                      </>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {request.status === "pending" ? (
+                                      <div className="d-flex gap-2">
+                                        <button
+                                          className="btn btn-sm btn-success"
+                                          type="button"
+                                          disabled={reviewingDayOffId === request.id}
+                                          onClick={() => void reviewDayOffRequest(request, "approved")}
+                                        >
+                                          Approve
+                                        </button>
+                                        <button
+                                          className="btn btn-sm btn-outline-danger"
+                                          type="button"
+                                          disabled={reviewingDayOffId === request.id}
+                                          onClick={() => void reviewDayOffRequest(request, "rejected")}
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="ccs-muted">Reviewed</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={7} className="ccs-muted">
+                                  No day-off requests yet.
+                                </td>
+                              </tr>
                             )}
                           </tbody>
                         </table>

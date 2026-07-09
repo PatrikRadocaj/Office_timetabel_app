@@ -9,6 +9,7 @@ import type {
   AgentDashboardData,
   AgentDayShift,
   AgentShiftListResponse,
+  DayOffRequest,
   TimeWindow,
   UserProfile,
 } from "../types";
@@ -18,7 +19,7 @@ interface DashboardPageProps {
   onSessionChange: () => void;
 }
 
-type QuickActionPanel = "shifts" | "availability" | null;
+type QuickActionPanel = "dayOff" | "shifts" | "availability" | null;
 
 const dayOptions = [
   { value: 0, label: "Monday", shortLabel: "Mon" },
@@ -77,6 +78,9 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
   const [alert, setAlert] = useState<{ type: "success" | "info" | "warning" | "danger"; message: string } | null>(null);
   const [activeQuickAction, setActiveQuickAction] = useState<QuickActionPanel>(null);
   const [quickActionLoading, setQuickActionLoading] = useState(false);
+  const [dayOffRequests, setDayOffRequests] = useState<DayOffRequest[]>([]);
+  const [dayOffForm, setDayOffForm] = useState({ startDate: "", endDate: "", reason: "" });
+  const [dayOffSubmitting, setDayOffSubmitting] = useState(false);
   const [allShifts, setAllShifts] = useState<AgentDayShift[]>([]);
   const [availabilityDraft, setAvailabilityDraft] = useState<TimeWindow[]>([]);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
@@ -150,6 +154,55 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
       type: "info",
       message: `${action} needs a request and approval workflow before it can be enabled. It is recorded in the backlog.`,
     });
+  };
+
+  const openDayOffRequests = async () => {
+    setAlert(null);
+    setActiveQuickAction("dayOff");
+    setQuickActionLoading(true);
+
+    try {
+      const rows = await apiRequest<DayOffRequest[]>("/me/day-off-requests");
+      setDayOffRequests(rows);
+    } catch (err) {
+      handleActionError(err, "Unable to load day-off requests");
+    } finally {
+      setQuickActionLoading(false);
+    }
+  };
+
+  const submitDayOffRequest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAlert(null);
+
+    try {
+      if (!dayOffForm.startDate) {
+        throw new Error("Start date is required.");
+      }
+      if (!dayOffForm.endDate) {
+        throw new Error("End date is required.");
+      }
+      if (dayOffForm.endDate < dayOffForm.startDate) {
+        throw new Error("End date must be on or after the start date.");
+      }
+
+      setDayOffSubmitting(true);
+      const created = await apiRequest<DayOffRequest>("/me/day-off-requests", {
+        method: "POST",
+        body: {
+          start_date: dayOffForm.startDate,
+          end_date: dayOffForm.endDate,
+          reason: dayOffForm.reason.trim() || null,
+        },
+      });
+      setDayOffRequests((current) => [created, ...current]);
+      setDayOffForm({ startDate: "", endDate: "", reason: "" });
+      setAlert({ type: "success", message: "Day-off request submitted for admin review." });
+    } catch (err) {
+      handleActionError(err, "Unable to submit day-off request");
+    } finally {
+      setDayOffSubmitting(false);
+    }
   };
 
   const openAllShifts = async () => {
@@ -376,7 +429,12 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
                 <div className="card-body">
                   <div className="row g-2">
                     <div className="col-12 col-sm-6 col-xl-3">
-                      <button className="btn btn-outline-primary w-100" onClick={() => showBacklogMessage("Request Day Off")} type="button">
+                      <button
+                        className={`btn w-100 ${activeQuickAction === "dayOff" ? "btn-primary" : "btn-outline-primary"}`}
+                        onClick={() => void openDayOffRequests()}
+                        type="button"
+                        disabled={quickActionLoading}
+                      >
                         Request Day Off
                       </button>
                     </div>
@@ -406,6 +464,118 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
                       </button>
                     </div>
                   </div>
+
+                  {activeQuickAction === "dayOff" && (
+                    <div className="border rounded p-3 mt-3">
+                      <div className="d-flex flex-column flex-md-row justify-content-between gap-2 mb-3">
+                        <div>
+                          <h6 className="mb-1">Request Day Off</h6>
+                          <div className="small ccs-muted">
+                            Requests are reviewed by an admin. Approval records the request; schedules are not changed automatically yet.
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn-sm btn-outline-secondary"
+                          type="button"
+                          onClick={() => void openDayOffRequests()}
+                          disabled={quickActionLoading}
+                        >
+                          {quickActionLoading ? "Loading..." : "Refresh"}
+                        </button>
+                      </div>
+
+                      <form className="row g-2 align-items-end mb-3" onSubmit={submitDayOffRequest}>
+                        <div className="col-12 col-md-3">
+                          <label className="form-label">Start date</label>
+                          <input
+                            className="form-control"
+                            type="date"
+                            value={dayOffForm.startDate}
+                            onChange={(event) => setDayOffForm((current) => ({ ...current, startDate: event.target.value }))}
+                          />
+                        </div>
+                        <div className="col-12 col-md-3">
+                          <label className="form-label">End date</label>
+                          <input
+                            className="form-control"
+                            type="date"
+                            value={dayOffForm.endDate}
+                            onChange={(event) => setDayOffForm((current) => ({ ...current, endDate: event.target.value }))}
+                          />
+                        </div>
+                        <div className="col-12 col-md-4">
+                          <label className="form-label">Reason optional</label>
+                          <input
+                            className="form-control"
+                            maxLength={500}
+                            value={dayOffForm.reason}
+                            onChange={(event) => setDayOffForm((current) => ({ ...current, reason: event.target.value }))}
+                            placeholder="Vacation, appointment, personal..."
+                          />
+                        </div>
+                        <div className="col-12 col-md-2 d-grid">
+                          <button className="btn btn-success" type="submit" disabled={dayOffSubmitting}>
+                            {dayOffSubmitting ? "Submitting..." : "Submit"}
+                          </button>
+                        </div>
+                      </form>
+
+                      {quickActionLoading ? (
+                        <p className="ccs-muted mb-0">Loading requests...</p>
+                      ) : dayOffRequests.length ? (
+                        <div className="table-responsive ccs-table-wrap">
+                          <table className="table table-sm align-middle">
+                            <thead>
+                              <tr>
+                                <th>Dates</th>
+                                <th>Status</th>
+                                <th>Reason</th>
+                                <th>Requested</th>
+                                <th>Review</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {dayOffRequests.map((request) => (
+                                <tr key={request.id}>
+                                  <td>
+                                    {formatDate(request.start_date)}
+                                    {request.end_date !== request.start_date ? ` - ${formatDate(request.end_date)}` : ""}
+                                  </td>
+                                  <td>
+                                    <span
+                                      className={`badge ${
+                                        request.status === "approved"
+                                          ? "text-bg-success"
+                                          : request.status === "rejected"
+                                            ? "text-bg-danger"
+                                            : "text-bg-warning"
+                                      }`}
+                                    >
+                                      {request.status}
+                                    </span>
+                                  </td>
+                                  <td>{request.reason || "-"}</td>
+                                  <td>{formatDate(request.requested_at)}</td>
+                                  <td>
+                                    {request.review_note || request.reviewed_by_name ? (
+                                      <>
+                                        <div>{request.review_note || "-"}</div>
+                                        <div className="small ccs-muted">{request.reviewed_by_name || ""}</div>
+                                      </>
+                                    ) : (
+                                      <span className="ccs-muted">Pending review</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="ccs-muted mb-0">No day-off requests submitted yet.</p>
+                      )}
+                    </div>
+                  )}
 
                   {activeQuickAction === "shifts" && (
                     <div className="border rounded p-3 mt-3">

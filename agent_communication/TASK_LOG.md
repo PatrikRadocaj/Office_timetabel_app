@@ -3,6 +3,52 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: FEAT-007 (review + live smoke)
+- Timestamp: 2026-07-09
+- Current state: Review complete with FULL LIVE END-TO-END SMOKE. Verdict: APPROVED WITH FINDINGS — none blocking. All eight acceptance criteria verified, most of them live against the real stack.
+- Acceptance-criteria verification:
+  1. Agents create/list only their own requests: PASS — ownership is an `agent_id` equality filter resolved from the caller's profile (single-field, no index risk); pinned by `test_agent_lists_only_own_day_off_requests`; live-verified create + own-list round trip.
+  2. Admins list all requests: PASS — live-verified (`GET /day-off-requests` returned the pending request).
+  3. Approve/reject pending with optional note: PASS — live: rejected with note "QA smoke - rejected intentionally" -> 200, status `rejected`, reviewer stamped "Demo Admin", `reviewed_at` set; re-review attempt -> 400 "Only pending day-off requests can be reviewed" (live-verified).
+  4. Non-admin blocked from admin endpoints: PASS — `require_admin` on both admin routes; 401/403 route tests; unauthenticated live probe -> 401.
+  5. Backlog placeholder gone: PASS — live; the Request Day Off button now opens the real panel.
+  6. Admin review UI usable: PASS — live: Day-Off Requests accordion renders the request row with agent identity, dates, rejected badge, review note, and the schedule-impact policy line; per-request note field + Approve/Reject buttons wired through `handleApiError`.
+  7. Approval does not mutate schedules: PASS — the service touches only `day_off_requests` (plus an agents `user_id` backfill); live evidence: `active_schedule_count` identical before and after review; D-20260709-009 policy string surfaced in API responses, agent panel, and admin panel.
+  8. No regression to quick actions/admin: PASS — full suites green (`pytest` 70 passed, `npm test` 7 passed, `npm run build` passed); dashboard and admin pages exercised live throughout.
+  - Bonus negative check (live): a logged-in user WITHOUT an agent profile clicking Request Day Off gets a graceful "Agent profile not found" banner and STAYS logged in — correctly distinct from AUTH-002's session-ending "User profile not found" string.
+- Live smoke method + leftover: the Demo Admin was given a temporary agent profile ("QA Demo Admin Agent", Munich office) to exercise the agent flow end-to-end, then the profile was DELETED after the smoke (cleanup verified 200). One artifact remains by design of the current API: the rejected request (reason "QA smoke test - safe to ignore") stays in `day_off_requests` because NO delete/purge endpoint exists — see finding 1. It is clearly labeled; it can be removed via the Firebase console if unwanted.
+- Findings (ordered by severity — none blocking):
+  1. Low — No lifecycle management for day-off requests: no delete/cancel/purge path exists, so requests accumulate forever (the QA leftover demonstrates this). Suggest backlog items: agent-side "cancel pending request", and an admin purge/retention capability (parallel to the existing schedules-retention backlog item).
+  2. Low — No overlap/duplicate/past-date guards: an agent can file multiple identical or overlapping requests, or request days in the past; admins must sort it out manually. Reasonable v1 scope — record as a product decision or backlog.
+  3. Info — `_resolve_agent_profile` is duplicated verbatim from `MeService`; extract a shared helper on the next touch.
+  4. Info — Stale-server incident #3: the running backend predated FEAT-007, so the dashboard initially showed a generic "Not Found" banner (unregistered route). Restarted from the worktree, after which everything worked. Suggest the driver checklist gain a standing "restart backend after backend changes" step, or local dev adopt `uvicorn --reload`.
+  5. Info (positive) — SCHED-002's index lesson was applied: ownership filtering is equality-only with in-memory newest-first sorting; no composite-index exposure anywhere in the new queries.
+- Commands run:
+  - `python -m pytest backend/tests` -> 70 passed
+  - `npm run build` -> passed; `npm test` -> 7 passed
+  - Live smoke (quota-minimal targeted ops): no-profile 404 check, agent-profile create, request create, own-list, admin list, reject-with-note, re-review 400, agent-view verification, schedule-count before/after, admin UI render check, agent-profile cleanup delete
+- Approval/blocker status: APPROVED — no blockers. FEAT-007 can be committed as a scoped commit (new backend model/repo/service/router + main.py + tests + DashboardPage/AdminPage/types + docs), excluding `runtime_logs/**`, seed scripts, and `vite.config.ts` as usual.
+- Recommended next step: Codex commits FEAT-007 scoped and adds the two backlog items (request lifecycle/cancel; overlap/past-date guards); optionally removes the labeled QA request doc via console or leaves it as demo data.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: DATA-007 test agent Firebase users
+- Timestamp: 2026-07-09 11:44:31 +02:00
+- Current state: Complete. Created five test-only Firebase Auth accounts for existing seeded IDnow demo agents and linked each matching Firestore `agents` document to its new Firebase UID.
+- Completed:
+  - Created Auth users for `idnow.demo.agent001@example.com` through `idnow.demo.agent005@example.com`.
+  - Created/updated matching Firestore `users/{uid}` profiles with role `agent` and `is_active=true`.
+  - Updated matching Firestore `agents` documents with `user_id`.
+- Verification:
+  - Verified all five Auth users exist.
+  - Verified all five Firestore user profiles exist with role `agent`.
+  - Verified all five agent profiles point to the expected Firebase UID.
+- Security note: Test passwords were returned to the user in chat only and were not written to repository files.
+
+## Status Update
 - Agent: Codex
 - Role: Driver
 - Task ID: SCHED-002 + DATA-006 closeout reconciliation
@@ -1360,6 +1406,46 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
   - Route audit via `Select-String` confirmed no remaining automatic admin-to-`/admin` login/session/dashboard redirect; only the intended `/admin` access guard remains.
 - Open issues: None for this task. Runtime logs and Firebase backup remain uncommitted local runtime data from earlier work.
 - Next step: Review in browser with an admin account and continue with the next approved task.
+
+## Status Update
+- Agent: Codex
+- Task ID: FEAT-007
+- Timestamp: 2026-07-09 11:38 +02:00
+- Current state: Done; ready for QA review.
+- Completed:
+  - Added backend day-off request model, Firestore repository, service, and routes.
+  - Added agent endpoints: `GET /api/v1/me/day-off-requests` and `POST /api/v1/me/day-off-requests`.
+  - Added admin endpoints: `GET /api/v1/day-off-requests` and `PUT /api/v1/day-off-requests/{request_id}/review`.
+  - Replaced the agent Request Day Off backlog alert with a real React form and request history.
+  - Added React admin review UI under Data Preview -> Day-Off Requests with approve/reject actions and optional review notes.
+  - Recorded schedule-impact policy in docs: approval records request status only; generated schedules and assignments are not changed automatically.
+  - Added backend authorization/workflow tests for own-request visibility, admin review, token requirements, and non-admin rejection on admin routes.
+- Files touched:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `call-center-scheduler/backend/app/main.py`
+  - `call-center-scheduler/backend/app/api/routers/day_off_requests.py`
+  - `call-center-scheduler/backend/app/models/day_off_request.py`
+  - `call-center-scheduler/backend/app/repositories/day_off_requests_repository.py`
+  - `call-center-scheduler/backend/app/services/day_off_request_service.py`
+  - `call-center-scheduler/backend/tests/test_day_off_requests.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `react-app/src/types.ts`
+- Commands/tests run:
+  - `python -m pytest backend\tests\test_day_off_requests.py` -> 9 passed
+  - `python -m pytest backend\tests` -> 70 passed
+  - `npm run build` from `react-app` -> passed; Vite reported the existing large chunk warning
+  - `git diff --check ...` -> no whitespace errors in touched tracked files
+  - `git status --short --branch` -> task changes present; unrelated `react-app/vite.config.ts` modification and untracked seed/reset scripts remain untouched
+- Decisions made:
+  - `D-20260709-009`: day-off approval records status only and does not automatically remove assignments or regenerate schedules.
+- Known issues:
+  - Approved day-off requests currently require manual schedule follow-up by admins; schedule-impact automation is recorded as backlog.
+  - Shift-swap request workflow remains unimplemented backlog.
+- Open questions: None for this first workflow.
+- Next step: Claude QA review of FEAT-007.
 
 ## Status Update
 - Agent: Codex

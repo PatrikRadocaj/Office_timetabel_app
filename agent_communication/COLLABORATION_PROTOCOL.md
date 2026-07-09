@@ -1,6 +1,6 @@
 # Codex + Claude Collaboration Protocol
 
-Last updated: 2026-07-08
+Last updated: 2026-07-09
 
 ## Purpose
 
@@ -63,6 +63,7 @@ Only one agent should be Driver for a given task or overlapping file set at a ti
 4. Verification
    - Run the narrowest useful tests first.
    - Run broader regression checks when auth, scheduling, data models, routing, or shared UI behavior changes.
+   - After backend code changes, restart the running Uvicorn process from the current worktree, or use `uvicorn --reload`, before any manual smoke test. Do not trust results from a stale backend process.
    - Record commands and outcomes in the task log.
 
 5. Documentation
@@ -206,4 +207,3 @@ A task is done only when:
 - Known residual issues are recorded.
 - `TASK_LOG.md` contains a handoff or completion entry.
 - No unrelated local changes were introduced.
-

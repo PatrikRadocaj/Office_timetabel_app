@@ -20,6 +20,7 @@ The application helps a multi-office call center manage:
 - Demand CSV upload
 - Schedule generation
 - Dashboard metrics and coverage gaps
+- Agent day-off requests and admin review
 - Agent-specific dashboard data
 
 ## Prerequisites
@@ -178,6 +179,7 @@ Admins can manage:
 - Skills, including create, edit, and delete
 - Agents, including create, edit, delete, skill assignment changes, and availability windows
 - Announcements, including create, edit, activate/deactivate, and delete
+- Day-off requests, including review, approval, and rejection
 - Demand forecasts
 - CSV demand uploads
 - Schedule generation
@@ -188,7 +190,7 @@ The dashboard shows personal schedule information, hours, skills, announcements,
 
 ### Agent Area
 
-Agents should see their own dashboard data and should not have access to admin-only controls. From the dashboard, agents can view all active generated shifts assigned to them and update their own availability windows.
+Agents should see their own dashboard data and should not have access to admin-only controls. From the dashboard, agents can view all active generated shifts assigned to them, update their own availability windows, and submit day-off requests for admin review.
 
 ### Admin Access
 
@@ -219,12 +221,23 @@ Agent dashboards show the newest 10 active announcements. Deactivated announceme
 ### Use Agent Quick Actions
 
 1. Log in as an agent and open the dashboard.
-2. Use View All My Shifts to load every active generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
-3. Use Update Availability to add, edit, or remove your availability windows.
-4. Availability windows use your office local time. Monday is 0 and Sunday is 6. Leave the list empty only if you should be treated as always available.
-5. Save Availability writes directly to your agent scheduling profile.
+2. Use Request Day Off to open your day-off request form and history.
+3. Enter a start date, end date, and optional reason, then submit the request.
+4. Use View All My Shifts to load every active generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
+5. Use Update Availability to add, edit, or remove your availability windows.
+6. Availability windows use your office local time. Monday is 0 and Sunday is 6. Leave the list empty only if you should be treated as always available.
+7. Save Availability writes directly to your agent scheduling profile.
 
-Request Day Off and Request Shift Swap are not enabled yet. They need a request and approval workflow before they can safely change schedules.
+Day-off requests can be pending, approved, or rejected. Approval records the request status only; it does not automatically remove generated assignments or regenerate schedules. Request Shift Swap is not enabled yet and still needs a request and approval workflow before it can safely change schedules.
+
+### Review Day-Off Requests
+
+1. Log in as admin.
+2. Open the admin area.
+3. In Data Preview, open Day-Off Requests.
+4. Review the agent, requested dates, reason, and current status.
+5. For pending requests, add an optional review note and choose Approve or Reject.
+6. After approval, account for the time off manually when generating or adjusting schedules. The app records the approval but does not automatically change existing generated schedules.
 
 ### Add Demand Forecasts
 
