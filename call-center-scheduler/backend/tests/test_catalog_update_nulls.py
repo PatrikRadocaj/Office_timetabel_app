@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.agent import AgentUpdate
-from app.models.office import OfficeUpdate
+from app.models.office import OfficeCreate, OfficeUpdate
 from app.models.skill import SkillUpdate
 from app.services.catalog_service import AgentService, OfficeService, SkillService
 
@@ -20,6 +20,7 @@ class RecordingRepository:
         self.updated_id: str | None = None
         self.updated_data: dict[str, Any] | None = None
         self.deleted_id: str | None = None
+        self.created_data: dict[str, Any] | None = None
 
     def get(self, document_id: str) -> dict[str, Any] | None:
         return next((row for row in self.rows if row.get("id") == document_id), None)
@@ -39,6 +40,10 @@ class RecordingRepository:
 
     def count(self, filters: list[tuple[str, str, Any]] | None = None) -> int:
         return len(self.list(filters=filters))
+
+    def create(self, data: dict[str, Any]) -> dict[str, Any]:
+        self.created_data = {**data}
+        return {**data, "id": "created-office"}
 
     def update(self, document_id: str, data: dict[str, Any]) -> dict[str, Any]:
         self.updated_id = document_id
@@ -77,6 +82,58 @@ class StaticSettings:
     max_weekly_hours_hard_limit = 40
 
 
+def test_office_create_accepts_valid_iana_timezone() -> None:
+    repo = RecordingRepository(
+        {
+            "id": "office-1",
+            "name": "Zagreb",
+            "timezone": "Europe/Zagreb",
+            "max_capacity": 50,
+        },
+        rows=[],
+    )
+    service = object.__new__(OfficeService)
+    service.repo = repo
+
+    created = service.create(
+        OfficeCreate(
+            name="Berlin",
+            timezone=" Europe/Berlin ",
+            max_capacity=20,
+        )
+    )
+
+    assert created["timezone"] == "Europe/Berlin"
+    assert repo.created_data and repo.created_data["timezone"] == "Europe/Berlin"
+
+
+def test_office_create_rejects_invalid_timezone() -> None:
+    repo = RecordingRepository(
+        {
+            "id": "office-1",
+            "name": "Zagreb",
+            "timezone": "Europe/Zagreb",
+            "max_capacity": 50,
+        },
+        rows=[],
+    )
+    service = object.__new__(OfficeService)
+    service.repo = repo
+
+    with pytest.raises(HTTPException) as exc_info:
+        service.create(
+            OfficeCreate(
+                name="Invalid TZ",
+                timezone="Europe/Not_A_Zone",
+                max_capacity=10,
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "valid IANA timezone" in exc_info.value.detail
+    assert repo.created_data is None
+
+
 def test_office_update_preserves_explicit_null_address() -> None:
     repo = RecordingRepository(
         {
@@ -95,6 +152,46 @@ def test_office_update_preserves_explicit_null_address() -> None:
     assert repo.updated_id == "office-1"
     assert repo.updated_data == {"address": None}
     assert updated["address"] is None
+
+
+def test_office_update_rejects_invalid_timezone() -> None:
+    repo = RecordingRepository(
+        {
+            "id": "office-1",
+            "name": "Zagreb",
+            "timezone": "Europe/Zagreb",
+            "max_capacity": 50,
+        }
+    )
+    service = object.__new__(OfficeService)
+    service.repo = repo
+
+    with pytest.raises(HTTPException) as exc_info:
+        service.update("office-1", OfficeUpdate(timezone="Mars/Base"))
+
+    assert exc_info.value.status_code == 400
+    assert "valid IANA timezone" in exc_info.value.detail
+    assert repo.updated_id is None
+
+
+def test_office_update_rejects_null_timezone_with_400() -> None:
+    repo = RecordingRepository(
+        {
+            "id": "office-1",
+            "name": "Zagreb",
+            "timezone": "Europe/Zagreb",
+            "max_capacity": 50,
+        }
+    )
+    service = object.__new__(OfficeService)
+    service.repo = repo
+
+    with pytest.raises(HTTPException) as exc_info:
+        service.update("office-1", OfficeUpdate(timezone=None))
+
+    assert exc_info.value.status_code == 400
+    assert "valid IANA timezone" in exc_info.value.detail
+    assert repo.updated_id is None
 
 
 def test_office_update_rejects_duplicate_name_except_current_office() -> None:

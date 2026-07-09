@@ -200,7 +200,7 @@ Admins can open the admin area from the dashboard using the Admin Panel button, 
 
 1. Log in as admin.
 2. Open the admin area.
-3. Use the create forms to add new offices, skills, or agents.
+3. Use the create forms to add new offices, skills, or agents. Office timezone values must be valid IANA names such as `Europe/Berlin` or `UTC`; the UI suggests common seeded zones.
 4. In Data Preview, use Edit to change an existing office, skill, or agent inline.
 5. For agents, use Availability to add office-local weekday/hour windows. Monday is 0 and Sunday is 6. Leave availability empty when the agent should be treated as always available.
 6. Use Delete to remove an item after confirming the browser prompt.
@@ -241,14 +241,15 @@ When a daily demand save uses `replace_existing_day=false`, the backend writes a
 
 1. Ensure offices, skills, agents, and demand forecasts exist.
 2. Open the schedule generation section.
-3. Select the start and end date/time window.
-4. Generate the schedule.
-5. Review the schedule ID, total required agents, total assigned agents, uncovered demand, and assignment rows.
-6. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
+3. Prefer the Office-local helper: choose an office, choose the office local date, then click Use Day or Use Week. This sets the generation window from midnight in that office's timezone.
+4. If needed, adjust the Start and End date/time fields manually.
+5. Generate the schedule.
+6. Review the schedule ID, total required agents, total assigned agents, uncovered demand, and assignment rows.
+7. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
 
 The scheduler respects agent availability windows and evaluates them in the agent's office local timezone, so a Monday 09:00-17:00 window means 09:00-17:00 at that agent's office. Agents with no availability windows are treated as always available.
 
-Note: the schedule generation start/end controls use the admin browser's local timezone. Demand days are defined in each office's timezone, so adjust the window when generating schedules for offices in a different timezone.
+Note: the manual schedule generation Start and End controls display in the admin browser's local timezone and are sent to the backend as UTC. The Office-local helper converts the selected office date/week into the correct UTC window first, then displays that equivalent window in the browser-local controls.
 
 ## Troubleshooting
 
@@ -263,6 +264,8 @@ Note: the schedule generation start/end controls use the admin browser's local t
 | Login fails for seeded users | Seeded `users` docs are profiles only | Create matching Firebase Auth users or register through the app |
 | App returns to login while you are using it | Session expired, user profile was deleted, or user was disabled | Log in again; if it repeats, ask an admin to verify your Firestore user profile is active |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |
+| Office save says timezone is invalid | The office timezone is not a real IANA timezone name | Use a value like `Europe/Berlin`, `Europe/London`, or `UTC` |
+| Every timezone is rejected as invalid | The backend virtual environment is missing the `tzdata` package on Windows | Activate `backend\\.venv` and run `pip install -r requirements.txt`, then restart the backend |
 | Office or skill delete is refused | Agents, demand forecasts, or generated schedules still reference the item | Review the alert's reference counts and update/remove dependent records before retrying; deletes do not cascade |
 | Port 8000 already in use | Another local server is running | Stop the old process or run Uvicorn on another port |
 | CORS error | Frontend origin not configured | Add the frontend URL to `CORS_ORIGINS` |

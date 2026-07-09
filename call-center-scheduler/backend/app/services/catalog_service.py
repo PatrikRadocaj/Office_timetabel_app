@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -39,6 +40,30 @@ def _ensure_aware_utc(timestamp: datetime | str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def _validate_iana_timezone(timezone_name: Any) -> str:
+    if not isinstance(timezone_name, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid timezone. Use a valid IANA timezone name such as Europe/Berlin or UTC.",
+        )
+
+    normalized = timezone_name.strip()
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid timezone. Use a valid IANA timezone name such as Europe/Berlin or UTC.",
+        )
+
+    try:
+        ZoneInfo(normalized)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid timezone. Use a valid IANA timezone name such as Europe/Berlin or UTC.",
+        ) from exc
+    return normalized
+
+
 class OfficeService:
     def __init__(self):
         self.repo = OfficesRepository()
@@ -50,7 +75,9 @@ class OfficeService:
         existing = self.repo.list(filters=[("name", "==", payload.name)], limit=1)
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Office name already exists")
-        return self.repo.create(payload.model_dump())
+        data = payload.model_dump()
+        data["timezone"] = _validate_iana_timezone(data["timezone"])
+        return self.repo.create(data)
 
     def list(self) -> list[dict[str, Any]]:
         return self.repo.list(order_by="name")
@@ -61,6 +88,8 @@ class OfficeService:
             if self.repo.get(office_id) is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Office not found")
             self._ensure_unique_name(update_data["name"], office_id)
+        if "timezone" in update_data:
+            update_data["timezone"] = _validate_iana_timezone(update_data["timezone"])
 
         updated = self.repo.update(office_id, update_data)
         if not updated:

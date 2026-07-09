@@ -3,6 +3,75 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: TZ-001 (manual smoke completion)
+- Timestamp: 2026-07-09
+- Current state: Manual admin-session smoke complete. Verdict: PASS live against the current TZ-001 worktree. The remaining gate is the undeclared `tzdata` dependency and the null-timezone edge fix.
+- Smoke results:
+  1. PASS — The office timezone datalist renders all 7 suggested zones, and typing another IANA name such as `America/New_York` is allowed.
+  2. PASS — Office-local helper math is exact: a London office selected in a Zagreb browser produced `01:00 -> 01:00 next day` for Use Day and `+7 local days` for Use Week, confirming office-midnight conversion.
+  3. PASS — Live backend validation rejects invalid zones with `400`, trims valid zones such as ` Europe/Berlin ` before persisting, and allowed the probe office to be deleted cleanly afterward.
+- Incidents:
+  - The pre-existing uvicorn on port 8000 was stale and initially accepted an invalid timezone; it had to be restarted from the current worktree before smoke testing.
+  - `backend/.venv` initially lacked `tzdata`; QA installed it into the venv to proceed, but the dependency still needed to be declared in `requirements.txt`.
+  - The Vite dev server was down and was restarted.
+- Verification:
+  - Live Firestore check after cleanup showed the seeded 5 offices only.
+  - Current stack after smoke: backend on 8000 from `backend/.venv`, Vite on 5173.
+- Next step:
+  - Codex adds `tzdata` to `requirements.txt`, handles the null-timezone `400`, reruns tests, and commits TZ-001 scoped.
+
+## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: TZ-001 (review)
+- Timestamp: 2026-07-09
+- Current state: Review complete. Verdict: APPROVED WITH FINDINGS. The timezone validation and office-local helper implementation are correct, but the commit was gated on a missing declared dependency and a small null-timezone API edge case.
+- Findings:
+  1. Medium — `tzdata` was not declared in `backend/requirements.txt`, and a fresh Windows venv rejected every timezone including `UTC` until QA installed `tzdata`.
+  2. Low — `OfficeUpdate(timezone=None)` survived model validation and crashed in `_validate_iana_timezone(None)` instead of returning `400`.
+  3. Info — Code review confirmed the office-local helper math is DST-safe and preserves the schedule API contract.
+  4. Info — JSX review confirmed the datalist is suggestion-only, supports both create and edit inputs, and does not block other IANA names.
+- Review confirmations:
+  - Invalid zones return `400` and do not persist.
+  - Valid zones such as `UTC` and `Europe/Berlin` work on tzdata-equipped interpreters.
+  - The helper clears stale schedule results on generation failure.
+  - The diff stayed scoped to timezone validation, datalist UX, office-local schedule helpers, and docs.
+- Commands/tests run:
+  - `python -m pytest backend/tests/test_catalog_update_nulls.py` -> 10 passed
+  - `python -m pytest backend/tests` -> 54 passed
+  - `npm run build` -> passed
+  - Probes confirmed the missing `tzdata` dependency and the `timezone=None` crash.
+- Next step:
+  - Declare `tzdata`, handle null timezone as `400`, rerun checks, and commit TZ-001 scoped.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: TZ-001 timezone handling explicit and safer
+- Timestamp: 2026-07-09 10:41:33 +02:00
+- Current state: Complete; backend office timezone validation, React timezone suggestions, and safer admin schedule generation UX are implemented. Changes are not committed.
+- Completed:
+  - Added backend-authoritative IANA timezone validation for office create and update.
+  - Replaced free-text-only React office timezone entry with IANA timezone datalist suggestions including `Europe/Berlin`, `Europe/London`, `Europe/Paris`, `Europe/Madrid`, `Europe/Amsterdam`, `Europe/Zagreb`, and `UTC`.
+  - Added an admin schedule-generation office-local helper so admins can choose an office and local date, then prefill a one-day or one-week generation window from that office's midnight.
+  - Clarified that manual Start/End fields are interpreted in the admin browser's local timezone and sent to the backend as UTC.
+  - Cleared stale `scheduleResult` when a new generation attempt fails.
+  - Updated `PROJECT_DOCS.md` with task status, decision D-20260709-006, and backlog cleanup; updated `USER_MANUAL.md` schedule-generation and troubleshooting guidance.
+- Files changed for this task:
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/tests/test_catalog_update_nulls.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Verification:
+  - `python -m pytest backend\\tests\\test_catalog_update_nulls.py` -> 10 passed
+  - `python -m pytest backend\\tests` -> 54 passed
+  - `npm run build` -> passed
+
+## Status Update
 - Agent: Codex
 - Role: Driver
 - Task ID: INTEG-001 closeout
