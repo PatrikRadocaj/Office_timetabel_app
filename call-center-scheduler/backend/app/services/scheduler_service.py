@@ -14,7 +14,7 @@ from app.models.schedule import ScheduleGenerationRequest
 from app.models.common import utcnow
 from app.repositories.agents_repository import AgentsRepository
 from app.repositories.offices_repository import OfficesRepository
-from app.repositories.schedules_repository import SchedulesRepository
+from app.repositories.schedules_repository import ACTIVE_SCHEDULE_STATUS, SchedulesRepository
 from app.repositories.skills_repository import SkillsRepository
 from app.services.catalog_service import DemandService
 
@@ -140,6 +140,7 @@ class SchedulerService:
                 "start_at": _as_utc(payload.start_at),
                 "end_at": _as_utc(payload.end_at),
                 "generated_at": utcnow(),
+                "status": ACTIVE_SCHEDULE_STATUS,
                 "algorithm": "greedy-skill-coverage-v1",
                 "slot_minutes": slot_minutes,
                 "assignments": assignments,

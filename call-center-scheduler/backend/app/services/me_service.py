@@ -161,7 +161,7 @@ class MeService:
         return agent
 
     def _collect_agent_slot_assignments(self, agent_id: str) -> list[dict[str, Any]]:
-        schedules = self.schedules_repo.list(order_by="generated_at")
+        schedules = self.schedules_repo.list_active(order_by="generated_at")
         seen_slot_keys: set[tuple[str, str, str, str]] = set()
         agent_assignments: list[dict[str, Any]] = []
 

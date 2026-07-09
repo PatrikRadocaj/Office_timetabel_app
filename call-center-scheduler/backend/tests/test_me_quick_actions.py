@@ -41,9 +41,23 @@ class FakeAgentsRepository:
 class StaticRepository:
     def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
         self.rows = rows or []
+        self.list_calls: list[dict[str, Any]] = []
 
-    def list(self, *_, **__) -> list[dict[str, Any]]:
-        return [dict(row) for row in self.rows]
+    def list(self, filters=None, order_by: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+        self.list_calls.append({"filters": filters, "order_by": order_by, "limit": limit})
+        rows = [dict(row) for row in self.rows]
+        for field_name, op, value in filters or []:
+            if op != "==":
+                raise AssertionError(f"Unsupported test filter op: {op}")
+            rows = [row for row in rows if row.get(field_name) == value]
+        if order_by:
+            reverse = order_by.startswith("-")
+            field_name = order_by[1:] if reverse else order_by
+            rows.sort(key=lambda row: row.get(field_name), reverse=reverse)
+        return rows[:limit] if limit is not None else rows
+
+    def list_active(self, order_by: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+        return self.list(filters=[("status", "==", "active")], order_by=order_by, limit=limit)
 
 
 def _service(agent: dict[str, Any] | None, schedules: list[dict[str, Any]] | None = None) -> MeService:
@@ -113,6 +127,7 @@ def test_shifts_returns_all_assigned_days_without_empty_placeholders() -> None:
         {
             "id": "schedule-old",
             "generated_at": "2026-07-01T00:00:00+00:00",
+            "status": "active",
             "assignments": [
                 _assignment(
                     datetime(2026, 7, 13, 8, 0, tzinfo=timezone.utc),
@@ -146,11 +161,13 @@ def test_newer_same_slot_assignment_without_current_agent_hides_older_shift() ->
         {
             "id": "schedule-old",
             "generated_at": "2026-07-01T00:00:00+00:00",
+            "status": "active",
             "assignments": [_assignment(slot_start, slot_end, "office-1", "skill-a", ["agent-1"])],
         },
         {
             "id": "schedule-new",
             "generated_at": "2026-07-02T00:00:00+00:00",
+            "status": "active",
             "assignments": [_assignment(slot_start, slot_end, "office-1", "skill-a", ["agent-2"])],
         },
     ]
@@ -160,6 +177,55 @@ def test_newer_same_slot_assignment_without_current_agent_hides_older_shift() ->
     assert payload["shifts"] == []
 
 
+def test_cancelled_newer_same_slot_assignment_does_not_hide_active_shift() -> None:
+    slot_start = datetime(2026, 7, 13, 8, 0, tzinfo=timezone.utc)
+    slot_end = datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc)
+    schedules = [
+        {
+            "id": "schedule-old",
+            "generated_at": "2026-07-01T00:00:00+00:00",
+            "status": "active",
+            "assignments": [_assignment(slot_start, slot_end, "office-1", "skill-a", ["agent-1"])],
+        },
+        {
+            "id": "schedule-new-cancelled",
+            "generated_at": "2026-07-02T00:00:00+00:00",
+            "status": "cancelled",
+            "assignments": [_assignment(slot_start, slot_end, "office-1", "skill-a", ["agent-2"])],
+        },
+    ]
+
+    payload = _service(_agent(), schedules=schedules).shifts(_current_user())
+
+    assert [shift["date"] for shift in payload["shifts"]] == ["2026-07-13"]
+    assert payload["shifts"][0]["office"] == "Berlin"
+
+
+def test_shifts_queries_only_active_schedules() -> None:
+    slot_start = datetime(2026, 7, 13, 8, 0, tzinfo=timezone.utc)
+    slot_end = datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc)
+    service = _service(
+        _agent(),
+        schedules=[
+            {
+                "id": "schedule-active",
+                "generated_at": "2026-07-01T00:00:00+00:00",
+                "status": "active",
+                "assignments": [_assignment(slot_start, slot_end, "office-1", "skill-a", ["agent-1"])],
+            }
+        ],
+    )
+
+    payload = service.shifts(_current_user())
+
+    assert payload["shifts"]
+    assert service.schedules_repo.list_calls[-1] == {
+        "filters": [("status", "==", "active")],
+        "order_by": "generated_at",
+        "limit": None,
+    }
+
+
 def test_dashboard_week_omits_shift_when_newer_same_slot_reassigned_to_other_agent() -> None:
     slot_start = datetime.now(timezone.utc).replace(hour=10, minute=0, second=0, microsecond=0)
     slot_end = slot_start + timedelta(hours=1)
@@ -167,11 +233,13 @@ def test_dashboard_week_omits_shift_when_newer_same_slot_reassigned_to_other_age
         {
             "id": "schedule-old",
             "generated_at": "2026-07-01T00:00:00+00:00",
+            "status": "active",
             "assignments": [_assignment(slot_start, slot_end, "office-1", "skill-a", ["agent-1"])],
         },
         {
             "id": "schedule-new",
             "generated_at": "2026-07-02T00:00:00+00:00",
+            "status": "active",
             "assignments": [_assignment(slot_start, slot_end, "office-1", "skill-a", ["agent-2"])],
         },
     ]

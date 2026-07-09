@@ -31,7 +31,7 @@ class DashboardService:
         self.schedules_repo = SchedulesRepository()
 
     def summary(self, start_at: datetime | None = None, end_at: datetime | None = None) -> dict[str, Any]:
-        schedules = list(reversed(self.schedules_repo.list(order_by="-generated_at", limit=5)))
+        schedules = list(reversed(self.schedules_repo.list_active(order_by="-generated_at", limit=5)))
         coverage_points: list[dict[str, Any]] = []
 
         start_utc = _as_utc(start_at) if start_at else None
@@ -60,6 +60,6 @@ class DashboardService:
             "total_agents": self.agents_repo.count(),
             "total_offices": self.offices_repo.count(),
             "total_skills": self.skills_repo.count(),
-            "active_schedule_count": self.schedules_repo.count(),
+            "active_schedule_count": self.schedules_repo.count_active(),
             "coverage_points": coverage_points,
         }

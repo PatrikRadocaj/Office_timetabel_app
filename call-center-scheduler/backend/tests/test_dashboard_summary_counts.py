@@ -25,11 +25,11 @@ class _ScheduleRepository:
         self.count_called = False
         self.list_called = False
 
-    def count(self) -> int:
+    def count_active(self) -> int:
         self.count_called = True
         return 9
 
-    def list(self, order_by: str | None = None, limit: int | None = None) -> list[dict]:
+    def list_active(self, order_by: str | None = None, limit: int | None = None) -> list[dict]:
         self.list_called = True
         assert order_by == "-generated_at"
         assert limit == 5
@@ -37,6 +37,7 @@ class _ScheduleRepository:
             {
                 "id": "schedule-1",
                 "generated_at": datetime(2026, 7, 9, tzinfo=timezone.utc),
+                "status": "active",
                 "assignments": [
                     {
                         "slot_start": datetime(2026, 7, 9, 8, 0, tzinfo=timezone.utc),

@@ -537,7 +537,7 @@ class DemandService:
         coverage_block_skill_map: dict[str, dict[str, int]] = defaultdict(dict)
         coverage_schedule_id: str | None = None
         coverage_generated_at: datetime | str | None = None
-        schedules = self.schedule_repo.list(order_by="generated_at")
+        schedules = self.schedule_repo.list_active(order_by="generated_at")
         for schedule in reversed(schedules):
             assignments = schedule.get("assignments", [])
             if not assignments:

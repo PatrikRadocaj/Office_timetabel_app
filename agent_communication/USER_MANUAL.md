@@ -188,7 +188,7 @@ The dashboard shows personal schedule information, hours, skills, announcements,
 
 ### Agent Area
 
-Agents should see their own dashboard data and should not have access to admin-only controls. From the dashboard, agents can view all generated shifts assigned to them and update their own availability windows.
+Agents should see their own dashboard data and should not have access to admin-only controls. From the dashboard, agents can view all active generated shifts assigned to them and update their own availability windows.
 
 ### Admin Access
 
@@ -219,7 +219,7 @@ Agent dashboards show the newest 10 active announcements. Deactivated announceme
 ### Use Agent Quick Actions
 
 1. Log in as an agent and open the dashboard.
-2. Use View All My Shifts to load every generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
+2. Use View All My Shifts to load every active generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
 3. Use Update Availability to add, edit, or remove your availability windows.
 4. Availability windows use your office local time. Monday is 0 and Sunday is 6. Leave the list empty only if you should be treated as always available.
 5. Save Availability writes directly to your agent scheduling profile.
@@ -261,6 +261,8 @@ Use ISO datetimes for `slot_start` and `slot_end`, for example `2026-05-10T09:00
 6. Review the schedule ID, total required agents, total assigned agents, uncovered demand, and assignment rows.
 7. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
 
+New generated schedules are marked `active`. Personal dashboards, View All My Shifts, Admin Summary coverage, and demand-day coverage use active schedules only. If a schedule is later marked `cancelled` or `archived` in Firestore, it is retained as history but ignored by those views. When multiple active schedules cover the same slot, the newest active schedule is authoritative for that slot.
+
 The scheduler respects agent availability windows and evaluates them in the agent's office local timezone, so a Monday 09:00-17:00 window means 09:00-17:00 at that agent's office. Agents with no availability windows are treated as always available.
 
 Note: the manual schedule generation Start and End controls display in the admin browser's local timezone and are sent to the backend as UTC. The Office-local helper converts the selected office date/week into the correct UTC window first, then displays that equivalent window in the browser-local controls.
@@ -278,6 +280,7 @@ Note: the manual schedule generation Start and End controls display in the admin
 | Login fails for seeded users | Seeded `users` docs are profiles only | Create matching Firebase Auth users or register through the app |
 | App returns to login while you are using it | Session expired, user profile was deleted, or user was disabled | Log in again; if it repeats, ask an admin to verify your Firestore user profile is active |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |
+| Agent shifts disappear after updating schedule visibility code | Older `generated_schedules` documents may not have `status: active` | Mark the intended visible schedules `active`, archive/cancel old schedules, or generate a fresh schedule |
 | Office save says timezone is invalid | The office timezone is not a real IANA timezone name | Use a value like `Europe/Berlin`, `Europe/London`, or `UTC` |
 | Every timezone is rejected as invalid | The backend virtual environment is missing the `tzdata` package on Windows | Activate `backend\\.venv` and run `pip install -r requirements.txt`, then restart the backend |
 | Office or skill delete is refused | Agents, demand forecasts, or generated schedules still reference the item | Review the alert's reference counts and update/remove dependent records before retrying; deletes do not cascade |
