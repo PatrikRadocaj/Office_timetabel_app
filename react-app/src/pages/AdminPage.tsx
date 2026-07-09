@@ -15,6 +15,7 @@ import {
 } from "../lib/format";
 import type {
   Agent,
+  Announcement,
   DashboardSummary,
   DemandDayView,
   DemandRow,
@@ -70,6 +71,13 @@ interface EditAgentState {
   shiftPreference: string;
   skills: PendingSkill[];
   availability: TimeWindow[];
+}
+
+interface EditAnnouncementState {
+  id: string;
+  title: string;
+  message: string;
+  isActive: boolean;
 }
 
 const chartColors = ["#0d6efd", "#198754", "#dc3545", "#fd7e14", "#6f42c1", "#20c997", "#6c757d", "#0dcaf0"];
@@ -234,6 +242,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [demandRows, setDemandRows] = useState<DemandRow[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   const [pendingSkills, setPendingSkills] = useState<PendingSkill[]>([]);
   const [selectedAgentSkillId, setSelectedAgentSkillId] = useState("");
@@ -255,6 +264,10 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [agentMinRest, setAgentMinRest] = useState(10);
   const [agentShiftPref, setAgentShiftPref] = useState("any");
   const [agentAvailability, setAgentAvailability] = useState<TimeWindow[]>([]);
+
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementMessage, setAnnouncementMessage] = useState("");
+  const [announcementActive, setAnnouncementActive] = useState(true);
 
   const [demandOfficeId, setDemandOfficeId] = useState("");
   const [demandDate, setDemandDate] = useState(todayIsoDate());
@@ -278,6 +291,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [editingOffice, setEditingOffice] = useState<EditOfficeState | null>(null);
   const [editingSkill, setEditingSkill] = useState<EditSkillState | null>(null);
   const [editingAgent, setEditingAgent] = useState<EditAgentState | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<EditAnnouncementState | null>(null);
   const [editAgentSkillId, setEditAgentSkillId] = useState("");
   const [editAgentSkillProficiency, setEditAgentSkillProficiency] = useState(3);
   const [sessionInvalid, setSessionInvalid] = useState(false);
@@ -362,13 +376,15 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
         setSelectedDemandSkillIds(skillRows.map((skill) => skill.id));
 
-        const [agentRows, demand] = await Promise.all([
+        const [agentRows, demand, announcementRows] = await Promise.all([
           apiRequest<Agent[]>("/agents"),
           apiRequest<DemandRow[]>("/demand-forecasts"),
+          apiRequest<Announcement[]>("/announcements"),
         ]);
 
         setAgents(agentRows);
         setDemandRows(demand);
+        setAnnouncements(announcementRows);
       } catch (error) {
         handleApiError(error, "Failed to initialize admin panel");
       }
@@ -509,6 +525,11 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const reloadDemand = async () => {
     const rows = await apiRequest<DemandRow[]>("/demand-forecasts");
     setDemandRows(rows);
+  };
+
+  const reloadAnnouncements = async () => {
+    const rows = await apiRequest<Announcement[]>("/announcements");
+    setAnnouncements(rows);
   };
 
   const addPendingSkill = () => {
@@ -950,6 +971,108 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       await Promise.all([reloadAgents(), loadAdminSummary({ preserveAlert: true })]);
     } catch (error) {
       handleApiError(error, "Failed to delete agent");
+    }
+  };
+
+  const submitAnnouncement = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    clearAdminAlert();
+
+    try {
+      requireValue(announcementTitle, "Announcement title");
+      requireValue(announcementMessage, "Announcement message");
+      if (announcementTitle.trim().length < 2) {
+        throw new Error("Announcement title must be at least 2 characters");
+      }
+
+      await apiRequest("/announcements", {
+        method: "POST",
+        body: {
+          title: announcementTitle.trim(),
+          message: announcementMessage.trim(),
+          is_active: announcementActive,
+        },
+      });
+
+      setAnnouncementTitle("");
+      setAnnouncementMessage("");
+      setAnnouncementActive(true);
+      setAlert({ type: "success", message: "Announcement created successfully." });
+      await reloadAnnouncements();
+    } catch (error) {
+      handleApiError(error, "Failed to create announcement");
+    }
+  };
+
+  const startAnnouncementEdit = (announcement: Announcement) => {
+    clearAdminAlert();
+    setEditingAnnouncement({
+      id: announcement.id,
+      title: announcement.title,
+      message: announcement.message,
+      isActive: announcement.is_active !== false,
+    });
+  };
+
+  const updateAnnouncement = async () => {
+    if (!editingAnnouncement) {
+      return;
+    }
+    clearAdminAlert();
+
+    try {
+      requireValue(editingAnnouncement.title, "Announcement title");
+      requireValue(editingAnnouncement.message, "Announcement message");
+      if (editingAnnouncement.title.trim().length < 2) {
+        throw new Error("Announcement title must be at least 2 characters");
+      }
+
+      await apiRequest<Announcement>(`/announcements/${editingAnnouncement.id}`, {
+        method: "PUT",
+        body: {
+          title: editingAnnouncement.title.trim(),
+          message: editingAnnouncement.message.trim(),
+          is_active: editingAnnouncement.isActive,
+        },
+      });
+
+      setEditingAnnouncement(null);
+      setAlert({ type: "success", message: "Announcement updated successfully." });
+      await reloadAnnouncements();
+    } catch (error) {
+      handleApiError(error, "Failed to update announcement");
+    }
+  };
+
+  const toggleAnnouncementActive = async (announcement: Announcement) => {
+    clearAdminAlert();
+
+    try {
+      const nextActive = announcement.is_active === false;
+      await apiRequest<Announcement>(`/announcements/${announcement.id}`, {
+        method: "PUT",
+        body: { is_active: nextActive },
+      });
+      setAlert({ type: "success", message: nextActive ? "Announcement activated." : "Announcement deactivated." });
+      await reloadAnnouncements();
+    } catch (error) {
+      handleApiError(error, "Failed to update announcement");
+    }
+  };
+
+  const deleteAnnouncement = async (announcement: Announcement) => {
+    clearAdminAlert();
+    if (!window.confirm(`Delete announcement "${announcement.title}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await apiRequest<{ message?: string }>(`/announcements/${announcement.id}`, { method: "DELETE" });
+      setEditingAnnouncement((current) => (current?.id === announcement.id ? null : current));
+      setAlert({ type: "success", message: "Announcement deleted successfully." });
+      await reloadAnnouncements();
+    } catch (error) {
+      handleApiError(error, "Failed to delete announcement");
     }
   };
 
@@ -1599,6 +1722,54 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                 </form>
               </div>
             </div>
+
+            <div className="card ccs-card mt-4">
+              <div className="card-header">
+                <h6 className="mb-0">Create Announcement</h6>
+              </div>
+              <div className="card-body">
+                <form className="row g-3" onSubmit={submitAnnouncement}>
+                  <div className="col-md-12">
+                    <label className="form-label">Title</label>
+                    <input
+                      className="form-control"
+                      value={announcementTitle}
+                      onChange={(event) => setAnnouncementTitle(event.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-12">
+                    <label className="form-label">Message</label>
+                    <textarea
+                      className="form-control"
+                      rows={3}
+                      value={announcementMessage}
+                      onChange={(event) => setAnnouncementMessage(event.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-12">
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="announcementActiveCheck"
+                        checked={announcementActive}
+                        onChange={(event) => setAnnouncementActive(event.target.checked)}
+                      />
+                      <label className="form-check-label" htmlFor="announcementActiveCheck">
+                        Active (visible on agent dashboards)
+                      </label>
+                    </div>
+                  </div>
+                  <div className="col-12">
+                    <button className="btn btn-info" type="submit">
+                      Add Announcement
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
 
           <div className="col-xl-6">
@@ -2194,6 +2365,134 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                                   </td>
                                 </tr>
                               ),
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="accordion-item">
+                    <h2 className="accordion-header">
+                      <button
+                        className="accordion-button collapsed"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#collapseAnnouncements"
+                      >
+                        Announcements
+                      </button>
+                    </h2>
+                    <div id="collapseAnnouncements" className="accordion-collapse collapse" data-bs-parent="#adminDataAccordion">
+                      <div className="accordion-body ccs-table-wrap">
+                        <table className="table table-sm">
+                          <thead>
+                            <tr>
+                              <th>Title</th>
+                              <th>Message</th>
+                              <th>Status</th>
+                              <th>Published</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {announcements.length ? (
+                              announcements.map((announcement) =>
+                                editingAnnouncement?.id === announcement.id ? (
+                                  <tr key={announcement.id}>
+                                    <td style={{ minWidth: 150 }}>
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={editingAnnouncement.title}
+                                        onChange={(event) => setEditingAnnouncement({ ...editingAnnouncement, title: event.target.value })}
+                                      />
+                                    </td>
+                                    <td style={{ minWidth: 220 }}>
+                                      <textarea
+                                        className="form-control form-control-sm"
+                                        rows={2}
+                                        value={editingAnnouncement.message}
+                                        onChange={(event) => setEditingAnnouncement({ ...editingAnnouncement, message: event.target.value })}
+                                      />
+                                    </td>
+                                    <td>
+                                      <div className="form-check">
+                                        <input
+                                          className="form-check-input"
+                                          type="checkbox"
+                                          id={`announcement-active-${announcement.id}`}
+                                          checked={editingAnnouncement.isActive}
+                                          onChange={(event) =>
+                                            setEditingAnnouncement({ ...editingAnnouncement, isActive: event.target.checked })
+                                          }
+                                        />
+                                        <label className="form-check-label" htmlFor={`announcement-active-${announcement.id}`}>
+                                          Active
+                                        </label>
+                                      </div>
+                                    </td>
+                                    <td>{formatDate(announcement.published_at ?? announcement.created_at)}</td>
+                                    <td>
+                                      <div className="d-flex gap-2">
+                                        <button className="btn btn-sm btn-primary" type="button" onClick={() => void updateAnnouncement()}>
+                                          Save
+                                        </button>
+                                        <button
+                                          className="btn btn-sm btn-outline-secondary"
+                                          type="button"
+                                          onClick={() => setEditingAnnouncement(null)}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  <tr key={announcement.id}>
+                                    <td>{announcement.title}</td>
+                                    <td style={{ maxWidth: 320 }}>{announcement.message}</td>
+                                    <td>
+                                      {announcement.is_active !== false ? (
+                                        <span className="badge text-bg-success">Active</span>
+                                      ) : (
+                                        <span className="badge text-bg-secondary">Inactive</span>
+                                      )}
+                                    </td>
+                                    <td>{formatDate(announcement.published_at ?? announcement.created_at)}</td>
+                                    <td>
+                                      <div className="d-flex gap-2">
+                                        <button
+                                          className="btn btn-sm btn-outline-primary"
+                                          type="button"
+                                          onClick={() => startAnnouncementEdit(announcement)}
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          className="btn btn-sm btn-outline-warning"
+                                          type="button"
+                                          onClick={() => void toggleAnnouncementActive(announcement)}
+                                        >
+                                          {announcement.is_active !== false ? "Deactivate" : "Activate"}
+                                        </button>
+                                        <button
+                                          className="btn btn-sm btn-outline-danger"
+                                          type="button"
+                                          onClick={() => void deleteAnnouncement(announcement)}
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ),
+                              )
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="ccs-muted">
+                                  No announcements yet.
+                                </td>
+                              </tr>
                             )}
                           </tbody>
                         </table>

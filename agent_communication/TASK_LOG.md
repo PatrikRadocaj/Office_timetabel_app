@@ -3,6 +3,104 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: QA agent (QM) / Reviewer
+- Task ID: FEAT-005 review closeout + SCHED-001 manual smoke
+- Timestamp: 2026-07-09 02:04:39 +02:00
+- Current state: APPROVED. FEAT-005 manual smoke passed and SCHED-001's remaining office-local availability smoke passed. FEAT-005 is clear to commit; SCHED-001 verification is now complete in `PROJECT_DOCS.md`.
+- Review result:
+  - Re-read the FEAT-005 review scope and verified the code paths: all `/api/v1/announcements` routes use `require_admin`; agents only receive active announcements via `/api/v1/me/dashboard`; lazy `AnnouncementService.repo` is accepted because it keeps router tests hermetic; legacy `body` -> `message` and missing-title -> `Notice` normalization matches `MeService._load_announcements`; React calls use existing 401/session invalidation handling.
+  - No blocking findings. Existing informational caveats remain: Firestore `order_by("created_at")` hides legacy documents missing `created_at`, and `create()` returns a raw well-formed document instead of re-normalizing it.
+- Smoke 1 - FEAT-005 announcements:
+  - Admin UI at `http://127.0.0.1:5173/admin`: created announcement `QA FEAT005 2026-07-08T23-55-14-023Z`; verified it appeared in Data Preview -> Announcements with `Active` badge and published date `09/07/2026`.
+  - Agent dashboard/API: temporary agent `qa-agent-1783554929@example.com` saw the active announcement through `GET /api/v1/me/dashboard`.
+  - Deactivated the announcement in Admin UI; admin badge changed to `Inactive`/`Activate`, and the announcement disappeared from the agent dashboard after reload/API refresh.
+  - Edited inline to `QA FEAT005 2026-07-08T23-55-14-023Z EDITED`, changed the message, re-checked Active, saved, and verified the edited title/message appeared on the agent dashboard.
+  - Deleted the announcement from Admin UI; follow-up Firestore query found zero matching announcement docs and the agent dashboard no longer returned it.
+  - Negative check with the temporary agent token: `GET /api/v1/announcements` -> 403 and `POST /api/v1/announcements` -> 403.
+  - Cleanup: deleted temporary Firebase auth user and `users/LIUbfGatTEMZEbwsHgOgF2wyBi72` profile document.
+- Smoke 2 - SCHED-001 office-local availability:
+  - Verified `IDnow Munich HQ` exists with timezone `Europe/Berlin` and 7 current-week demand documents.
+  - Created targeted temporary artifacts only: skill `0Op6i92KgjENNtDfUiCi`, agent `0lie2STJd3Gs7YSwFLnp` with Monday-Friday 09:00-17:00 availability, one compact demand doc `daily_2026-07-10_idnow_munich_hq_30_e993d4d2`, and generated schedule `mI7PvK3YYp9kezjcnsJE`.
+  - Generated a schedule for Friday 2026-07-10 10:00-10:30 Europe/Berlin (`08:00-08:30 UTC`). The temporary agent was assigned to the temporary skill demand; the assignment landed at `2026-07-10T10:00:00+02:00` to `2026-07-10T10:30:00+02:00`, within the 09:00-17:00 Munich-local window, with gap 0.
+  - Cleanup: deleted 1 temporary agent, 1 temporary skill, 1 temporary demand doc, and 1 temporary generated schedule.
+- Firestore/auth operations touched:
+  - FEAT-005: 1 test announcement create, 2 announcement updates, 1 announcement delete; 1 temporary auth user/profile create through register API; 1 auth user delete and 1 profile delete; targeted dashboard/admin reads.
+  - SCHED-001: 1 temporary skill create/delete, 1 temporary agent create/delete, 1 compact demand doc create/delete, 1 generated schedule create/delete; catalog/demand reads were targeted to the smoke.
+- Commands/tests run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 33 passed.
+  - `npm run build` from `react-app` -> passed; Vite reported the known >500 kB chunk-size warning.
+  - Live stack checks and targeted Python smoke scripts against the running backend/Firestore.
+- Changed files for closeout:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+- Commit status: Pending FEAT-005 scoped commit after this status entry. Exclude `runtime_logs/**`, `.env`/service-account files, untracked seed scripts, and unrelated `react-app/vite.config.ts`.
+- Open issues: None blocking for FEAT-005 or SCHED-001. Runtime logs/backups and pending seed scripts remain intentionally uncommitted.
+
+## Status Update
+- Agent: Claude
+- Task ID: FEAT-005 (review) + QA smoke attempt for FEAT-005 / SCHED-001
+- Timestamp: 2026-07-09
+- Current state: Code review complete — Verdict: APPROVED (code) with informational findings only. Both manual smokes are BLOCKED on a live admin session (details below); FEAT-005 therefore remains UNCOMMITTED per the smoke-gated commit rule in the QA assignment.
+- Review scope covered: `app/models/announcement.py`, `app/services/announcement_service.py`, `app/api/routers/announcements.py`, `app/main.py` registration, `tests/test_announcements_api.py`, `AdminPage.tsx` announcements sections, `types.ts`, and consistency with `MeService._load_announcements`.
+- Review confirmations:
+  1. All four routes (GET/POST/PUT/DELETE) are admin-only via `require_admin`, satisfying D-20260709-001; agents keep receiving only ACTIVE announcements through `/me/dashboard` (inactive filter pinned by test). Live check on the restarted backend: `GET /api/v1/announcements` with no token -> 401 (route registered and guarded).
+  2. Lazy repo property: ACCEPTED. It is deliberate, documented in-code and in the task log, and keeps route tests hermetic; the eager alternative would force Firestore credentials into route-level tests, and full DI would be a codebase-wide refactor out of scope. No change requested.
+  3. Legacy normalization matches MeService exactly (same `body` -> `message` fallback, same "Notice" title fallback). `AnnouncementRead` is lenient enough that normalized legacy rows serialize; no 500 path found for old data shapes. One shared caveat noted in findings (created_at ordering).
+  4. React wiring matches existing patterns: all calls route through `handleApiError` (401 -> session invalidation preserved), announcements load in the initial admin fetch batch, edit-state handling mirrors offices/skills/agents, delete confirms first, toggle uses a correct partial PUT (`{is_active}` under `exclude_unset`).
+  5. Tests: meaningful coverage — 401 (no token), 403 (agent role) on all four routes, full admin CRUD, 422 validation, service normalization/404s, and the dashboard inactive filter.
+- Findings (informational only, none blocking):
+  1. Info — On real Firestore, `list(order_by="created_at")` EXCLUDES documents that lack a `created_at` field entirely (Firestore orderBy semantics). Any hand-created legacy announcement without `created_at` is invisible in both the admin list and the agent dashboard. Pre-existing behavior shared with `MeService._load_announcements`; the normalization fallbacks only help docs that DO have `created_at`. Note for the backlog if legacy docs matter.
+  2. Info — `AnnouncementService.create` returns the raw repo document without `_normalize` (fine for new well-formed docs; slight asymmetry with list/update).
+- Commands/tests run:
+  - `python -m pytest backend\tests` -> 33 passed (matches the implementation log's claim)
+  - `npm run build` (react-app) -> passed (pre-existing chunk-size warning only)
+  - Live: `GET /api/health` -> 200; `GET /api/v1/announcements` no token -> 401
+- Operational note (important for anyone smoking): the uvicorn process on port 8000 was still running PRE-FEAT-005 code and returned 404 for `/api/v1/announcements`. I stopped it and restarted uvicorn from `backend/.venv`, and the new route now responds 401 unauthenticated. Any smoke attempted before this restart would have failed spuriously.
+- Manual smoke status: BLOCKED — both Smoke 1 (FEAT-005 announcements) and Smoke 2 (SCHED-001 office-local availability) require an authenticated admin browser session. The Chrome extension is not connected in this environment, and signing in requires entering credentials, which agents must not do. Backend (8000, new code) and Vite (5173) are both up and healthy, so the stack is READY for the user to smoke immediately.
+- Smoke checklists remain as specified in the QA assignment (announcements create/dashboard/deactivate/edit/delete + 403 negative checks; Munich-office 09:00-17:00 local assignment window for SCHED-001). Firestore quota caution still applies: single targeted operations only.
+- Commit status: NOT committed — the QA assignment gates the FEAT-005 commit on Smoke 1 passing. Everything else is ready; commit can follow immediately after a passing smoke.
+- Recommended next step: User signs in as admin at `http://localhost:5173` (and ideally connects the Chrome extension so an agent can drive/verify), runs or delegates the two smokes, then FEAT-005 gets committed (scoped, excluding `runtime_logs/**` and the pending seed scripts) and SCHED-001's verification is marked complete in PROJECT_DOCS.
+
+## Status Update
+- Agent: Claude
+- Task ID: FEAT-005 announcements admin management
+- Timestamp: 2026-07-09
+- Current state: Implementation complete; automated verification passed. Uncommitted, awaiting review (new admin-only routes touch the auth surface, which requires review per protocol) and the manual browser smoke.
+- Completed:
+  - Backend inspection confirmed no announcement API routes existed: `AnnouncementsRepository` was only read by `MeService._load_announcements` (dashboard shows the newest 10 active announcements, filters `is_active: false`, falls back `message` -> `body` and empty title -> "Notice").
+  - Added `app/models/announcement.py`: `AnnouncementCreate` (title 2-120 chars, message 1-2000, `is_active` default true), `AnnouncementUpdate` (all optional), and a deliberately lenient `AnnouncementRead` so legacy documents still serialize.
+  - Added `app/services/announcement_service.py::AnnouncementService`: list (newest first, normalizes legacy `body`/missing-title rows with the same fallbacks as MeService), create (stamps `published_at`), update (exclude_unset, 404 when missing), delete (404 when missing). The Firestore repo is created lazily so importing the router needs no credentials, keeping route-level tests hermetic.
+  - Added `app/api/routers/announcements.py` and registered it in `app/main.py`: GET/POST `/api/v1/announcements`, PUT/DELETE `/api/v1/announcements/{id}` — ALL admin-only via `require_admin` (decision D-20260709-001: the list includes inactive drafts, so even GET is admin-only; agents keep reading active announcements via `/me/dashboard`).
+  - React admin UI in `AdminPage.tsx`: new Create Announcement form (title, message, Active checkbox) below Create Agent; new Announcements accordion in Data Preview listing all announcements with Active/Inactive badge and published date, inline Edit (title/message/active) with Save/Cancel, one-click Activate/Deactivate toggle, and confirmed Delete. All calls route through the existing `handleApiError`/401 handling; announcements load with the initial admin data fetch. Added the `Announcement` type to `types.ts`.
+  - Agent dashboard is untouched — it keeps rendering active announcements from `/me/dashboard`, and a new test pins the inactive-filtering behavior.
+- Files touched:
+  - `call-center-scheduler/backend/app/models/announcement.py` (new)
+  - `call-center-scheduler/backend/app/services/announcement_service.py` (new)
+  - `call-center-scheduler/backend/app/api/routers/announcements.py` (new)
+  - `call-center-scheduler/backend/app/main.py`
+  - `call-center-scheduler/backend/tests/test_announcements_api.py` (new)
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/types.ts`
+  - `agent_communication/PROJECT_DOCS.md` (FEAT-005 row, D-20260709-001)
+  - `agent_communication/USER_MANUAL.md` (admin capabilities list, new Manage Announcements workflow)
+  - `agent_communication/TASK_LOG.md`
+- Commands/tests run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 33 passed (23 existing + 10 new: service CRUD/normalization/404s, dashboard inactive filtering, and route tests proving 401 with no token, 403 for agent role, full CRUD for admin role, and 422 payload validation — the route tests run against a minimal FastAPI app with only the announcements router, so the suite still needs no Firebase credentials).
+  - `npm run build` from `react-app` -> passed (pre-existing >500 kB chunk-size warning only).
+  - FastAPI TestClient against the real `app.main` app (from `backend`, where `.env` resolves) -> `/api/health` 200; `GET /api/v1/announcements` with no token 401, proving the router is registered and guarded.
+- Acceptance criteria coverage:
+  - Admin can create -> POST route + admin CRUD route test + UI form.
+  - Agent dashboard displays it -> unchanged `/me/dashboard` path; inactive-filter test added; live check pending manual smoke.
+  - Admin can edit and remove/deactivate -> PUT/DELETE routes, UI inline edit + Activate/Deactivate toggle + Delete.
+  - Non-admin cannot mutate -> `require_admin` on every route; 403 route test for agent role.
+- Open issues / notes for review:
+  - Manual browser smoke NOT run: no admin credentials are available to this agent and creating throwaway Firebase identities was out of scope. User (or Codex with an admin session) should: create an announcement in `/admin`, verify it on an agent dashboard, deactivate it, verify it disappears, then delete it.
+  - `AnnouncementService` creates its repo lazily (property) unlike other services' eager module-import construction — deliberate, so importing the router (and therefore route-level tests) works without Firestore credentials. Flagging in case the reviewer prefers pattern consistency.
+  - Nothing committed yet; commit after review per the auth-surface review rule.
+- Next step: Codex reviews FEAT-005; user runs the manual smoke; then commit as a scoped commit (exclude `runtime_logs/**` and the still-pending seed scripts).
+
+## Status Update
 - Agent: Claude
 - Task ID: SCHED-001 scheduler office-local availability fix + FEAT-004 closeout
 - Timestamp: 2026-07-08

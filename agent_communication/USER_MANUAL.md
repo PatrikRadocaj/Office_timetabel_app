@@ -169,6 +169,7 @@ Admins can manage:
 - Offices, including create, edit, and delete
 - Skills, including create, edit, and delete
 - Agents, including create, edit, delete, skill assignment changes, and availability windows
+- Announcements, including create, edit, activate/deactivate, and delete
 - Demand forecasts
 - CSV demand uploads
 - Schedule generation
@@ -196,6 +197,16 @@ Admins can open the admin area from the dashboard using the Admin Panel button, 
 5. For agents, use Availability to add office-local weekday/hour windows. Monday is 0 and Sunday is 6. Leave availability empty when the agent should be treated as always available.
 6. Use Delete to remove an item after confirming the browser prompt.
 7. If the backend rejects an update or delete, review the alert banner for the exact error.
+
+### Manage Announcements
+
+1. Log in as admin.
+2. Open the admin area.
+3. Use the Create Announcement form to add a title and message. Leave Active checked so the announcement appears on agent dashboards immediately, or uncheck it to save a hidden draft.
+4. In Data Preview, open the Announcements section to list all announcements, including inactive ones.
+5. Use Edit to change the title, message, or active state inline; use Activate/Deactivate to toggle visibility without editing; use Delete to remove an announcement permanently after confirming the browser prompt.
+
+Agent dashboards show the newest 10 active announcements. Deactivated announcements disappear from dashboards but stay listed in the admin panel. Only admins can view the management list or change announcements; agents receive active announcements through their dashboard only.
 
 ### Add Demand Forecasts
 

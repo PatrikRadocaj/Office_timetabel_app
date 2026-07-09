@@ -56,6 +56,16 @@ export interface Agent {
   availability?: TimeWindow[];
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  is_active: boolean;
+  published_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface DemandRow {
   id: string;
   office_id: string;
