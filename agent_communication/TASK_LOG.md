@@ -3,6 +3,23 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: SEC-001 closeout
+- Timestamp: 2026-07-09 10:03:47 +02:00
+- Current state: Closed out and committed.
+- Commit hash: `7d97a95377cc33fedb818b89b1879de8c29b8b8c` (`chore: secure local Firebase hygiene`) on branch `codex/invalid-token-redirect`.
+- Completed:
+  - Committed the scoped SEC-001 hygiene set: five tracked deletions, root `.gitignore`, `.dockerignore`, `call-center-scheduler/.gitignore`, `call-center-scheduler/backend/.env.example`, `call-center-scheduler/README.md`, and SEC-001 documentation/task-log updates.
+  - Fixed Claude finding 3 before committing: `.env.example` now uses React/Vite CORS origins `http://localhost:5173` and `http://127.0.0.1:5173` instead of the removed vanilla frontend's port 5500.
+  - Confirmed RISK-004 remains Open; key rotation is pending user confirmation and was not performed by Codex.
+- Verification:
+  - `git show --name-status --oneline --no-renames HEAD` confirmed the SEC-001 commit contains only the scoped hygiene/documentation paths.
+  - `git status --short --branch` after the SEC-001 commit confirmed unrelated files stayed out of the commit: `call-center-scheduler/backend/app/api/routers/me.py`, `call-center-scheduler/backend/app/models/me.py`, `call-center-scheduler/backend/app/services/me_service.py`, `react-app/src/pages/DashboardPage.tsx`, `react-app/src/types.ts`, `react-app/vite.config.ts`, `call-center-scheduler/backend/tests/test_me_quick_actions.py`, and the two pending seed scripts.
+- Tests run: Not run after this closeout; SEC-001 is git hygiene and documentation only.
+- Open issues: User still needs to rotate the previously tracked Firebase/GCP service-account key and confirm rotation before RISK-004 can move from Open.
+
+## Status Update
 - Agent: Claude
 - Role: QA Reviewer
 - Task ID: SEC-001 (review)
