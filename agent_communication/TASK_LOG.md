@@ -3,6 +3,141 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: AUTH-002 closeout
+- Timestamp: 2026-07-09 10:27:03 +02:00
+- Current state: Complete and committed.
+- Commit hash:
+  - `041431aa3dd39e204367c6ab1af322992a5e7410` (`fix: end invalid react sessions cleanly`)
+- Changed files in commit:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `react-app/package.json`
+  - `react-app/package-lock.json`
+  - `react-app/src/App.tsx`
+  - `react-app/src/lib/api.ts`
+  - `react-app/src/lib/api.test.ts`
+  - `react-app/src/pages/AdminPage.tsx`
+- Commands run:
+  - `npm test` in `react-app` -> 5 tests passed
+  - `npm run build` in `react-app` -> passed
+  - `git status --short` after commit -> confirmed unrelated files stayed out of the commit
+- Done:
+  - Updated the negative frontend unit test to use the backend's real admin-only `403` detail string: `Admin role required`.
+  - Committed the AUTH-002 session-ending helper, `syncSession` hardening, Vitest setup/test, and the associated docs/manual/task-log updates as one scoped commit.
+  - Added backlog notes for backend-pinned session-ending error strings / structured error codes and for deferred `npm audit` dependency updates.
+- Backlogged only:
+  - Backend/frontend contract hardening for exact `403 User is disabled` and `404 User profile not found` strings or a structured replacement.
+  - Dependency updates for the current `npm audit` findings; require explicit user approval before running.
+- Scope verification:
+  - Left out as requested: `react-app/vite.config.ts`, `runtime_logs/**`, untracked seed scripts.
+  - Also left out unrelated in-flight backend null-clearing work: `call-center-scheduler/backend/app/services/catalog_service.py` and `call-center-scheduler/backend/tests/test_catalog_update_nulls.py`.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: AUTH-002 closeout
+- Timestamp: 2026-07-09
+- Current state: In progress. Applying Claude's two non-blocking review follow-ups before the scoped commit: the frontend contract test now uses the backend's real `403` detail string `Admin role required`, and `PROJECT_DOCS.md` backlog is being updated with the message-string contract note plus the deferred `npm audit` dependency-update task.
+- Planned verification:
+  - `npm test` in `react-app`
+  - `npm run build` in `react-app`
+- Commit scope reminder:
+  - Include AUTH-002 React/files + doc/manual/task-log updates only.
+  - Exclude `runtime_logs/**`, untracked seed scripts, and line-endings-only `react-app/vite.config.ts`.
+
+## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: AUTH-002 (review)
+- Timestamp: 2026-07-09
+- Current state: Review complete. Verdict: APPROVED — no blockers. This correctly implements the session-ending backlog items from the earlier AUTH-INVALID-TOKEN-REDIRECT and FEAT-004-era reviews (403 disabled / 404 missing-profile handling plus the `syncSession` `useCallback` hardening), with the first frontend unit tests in the project.
+- QA-focus confirmations:
+  1. Helper matches the intended cases exactly: `isSessionEndingAuthError` returns true for ANY 401, for 403 only when the message normalizes (trim+lowercase) to "user is disabled", and for 404 only when it normalizes to "user profile not found" — precisely the three `get_current_user` session-death shapes in `deps.py`. Unit tests pin all five cases (401, disabled-403, admin-only-403 negative, missing-profile-404, ordinary-404 negative).
+  2. Normal admin-only 403 does NOT clear auth: confirmed — any 403 message other than the disabled string falls through to a visible error. (Note: the backend's actual message is "Admin role required", not the "Admin access required" used in the spec/test — behaviorally irrelevant since only the exact disabled string ends sessions, but see finding 2.)
+  3. `apiRequest` clears local storage only for AUTHENTICATED session-ending responses: confirmed — the guard is `auth && isSessionEndingAuthError(error)`, so a wrong-password 401 on login (`auth: false`) still leaves storage alone, and an authenticated disabled-403 now clears `ccs_id_token`/`ccs_user` even if a caller forgets to handle the error.
+  4. AdminPage uses the new helper on all three error paths: confirmed — `handleApiError` (normal), `loadAdminSummary` (`preserveAlert`), and `loadChart` (`silent`) all check `isSessionEndingAuthError`; session-enders always reach `handleSessionEnded` (clearAuth + onSessionChange + redirect + `sessionInvalid` null-render), while non-session errors keep their preserve/silent semantics. No stale `isUnauthorizedError` references remain anywhere in `src/`.
+  5. DashboardPage consistent: confirmed — it already imports and uses `isSessionEndingAuthError` (updated in the FEAT-006 commit) in both its load and quick-action error paths, with `handleSessionEnded` and the `sessionInvalid` null-render intact.
+  6. `syncSession` wrapped in `useCallback` with an empty dep array (reads localStorage via helpers, so no deps needed): confirmed — this closes the long-standing "handler identity chains to App re-renders" hardening note.
+  7. Docs accurate: PROJECT_DOCS has the AUTH-002 row, decision D-20260709-004, the Testing stack row now includes Vitest, and backlog items 9/10 were correctly removed as implemented (remaining items renumbered, none lost — 23 present). USER_MANUAL gained an accurate troubleshooting row for "app returns to login". Task log matches the diff.
+  8. npm audit (report only, per instruction — NOTHING fixed): 5 vulnerabilities (1 low, 3 moderate, 1 high) — `@babel/core` <=7.29.0 (arbitrary file read via sourceMappingURL; fix available via `npm audit fix`), `esbuild` <=0.24.2 (dev-server request exposure; fix requires `--force`, i.e. a Vite major bump), `react-router` 6.7.0-6.30.3 (fix available). All are build/dev-time surfaces, not shipped runtime code; recommend a separately-approved dependency-update task for the two non-breaking fixes.
+- Findings (ordered by severity — none blocking):
+  1. Low — Message-string coupling: session-ending detection for 403/404 depends on the backend's exact `detail` strings. If the backend ever rewords "User is disabled" or "User profile not found", the frontend silently reverts to the old behavior (user stays in the shell with a dead token) with no test failing on either side. Fail-safe direction, but worth a backlog note: either add a backend test pinning these exact strings as a frontend contract, or move to a structured error code.
+  2. Info — The spec and the negative test use "Admin access required", but `deps.py` actually sends "Admin role required". No behavioral impact (only the exact disabled string matches); using the real backend string in the test would make it a truer contract test.
+  3. Info — `vitest` (^4.1.10) added as devDependency with a `test` script; the audit findings above came in with the existing tree, not uniquely from Vitest. First frontend test infrastructure in the repo — backlog item 7 correctly updated from "add infrastructure" to "broaden coverage".
+- Commands run:
+  - `npm test` (react-app) -> 1 file, 5 tests passed (matches claim)
+  - `npm run build` -> passed (pre-existing chunk-size warning only)
+  - `npm audit` -> report only, summarized above; no fixes applied
+- Approval/blocker status: APPROVED — no blockers. AUTH-002 can be committed as a scoped commit (api.ts + api.test.ts + App.tsx + AdminPage.tsx + package files + doc updates), excluding `runtime_logs/**`, seed scripts, and `vite.config.ts` as usual.
+- Recommended next step: Codex commits AUTH-002 scoped; backlog the message-string contract note (finding 1); user decides separately whether to run the two non-breaking `npm audit fix` updates.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: DATA-005 + FEAT-006 closeout
+- Timestamp: 2026-07-09 10:20:30 +02:00
+- Current state: Both scoped implementation commits are complete; hash record appended. This status entry is intentionally left uncommitted because `TASK_LOG.md` currently also contains separate in-flight AUTH-002 doc work that should not be bundled into the DATA-005 or FEAT-006 commits.
+- Commit hashes:
+  - DATA-005: `278107d0177ea0da4a87a0a19b744c7bb6880fb9` (`perf: reduce firestore read volume`)
+  - FEAT-006: `2bfb54e14e884f10bf8c604065b0756576a670ee` (`feat: add agent quick actions`)
+- Changed files by commit:
+  - DATA-005: `firestore_repository.py`, `dashboard_service.py`, `catalog_service.py`, `test_firestore_repository.py`, `test_dashboard_summary_counts.py`, `test_demand_compact_storage.py`, `PROJECT_DOCS.md`, `TASK_LOG.md`
+  - FEAT-006: `backend/app/api/routers/me.py`, `backend/app/models/me.py`, `backend/app/services/me_service.py`, `backend/tests/test_me_quick_actions.py`, `react-app/src/pages/DashboardPage.tsx`, `react-app/src/types.ts`
+- Commands/tests run:
+  - `python -m pytest backend\tests\test_firestore_repository.py backend\tests\test_dashboard_summary_counts.py backend\tests\test_demand_compact_storage.py` -> 8 passed
+  - `python -m pytest backend\tests` -> 46 passed
+  - No live Firestore operations run
+- Fixed:
+  - DATA-005 prefix lookup hardening now filters prefix-query results by `office_id`, `forecast_date`, and `interval_minutes` before day-view/read-replace use.
+  - Added a collision regression so a colliding office id document is not deleted by replace-day cleanup.
+  - Added a debug log when Firestore `count()` falls back to streaming.
+  - Removed the redundant `schedules[-5:]` slice from `DashboardService.summary()`.
+  - FEAT-006 quick-actions backend/frontend/test files are now committed separately from DATA-005.
+- Backlogged:
+  - After Firestore quota recovers, run one targeted live check to confirm the `FieldPath.document_id()` prefix range query works against the real Firestore client.
+- Post-commit worktree verification:
+  - After both commits, the requested DATA-005/FEAT-006 files were clean.
+  - Unrelated files remained out of the commits: current AUTH-002 React/session-ending work (`PROJECT_DOCS.md`, `USER_MANUAL.md`, `TASK_LOG.md`, `react-app/package*.json`, `react-app/src/App.tsx`, `react-app/src/lib/api.ts`, `react-app/src/pages/AdminPage.tsx`, `react-app/src/lib/api.test.ts`), `react-app/vite.config.ts`, and the two untracked seed scripts.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: AUTH-002 deleted/disabled React session handling
+- Timestamp: 2026-07-09 10:15:58 +02:00
+- Current state: Complete; React now clears auth and redirects to login for invalid, deleted, or disabled authenticated sessions. Changes are not committed.
+- Completed:
+  - Replaced the frontend's 401-only session handling with centralized `isSessionEndingAuthError()` logic.
+  - Session-ending errors are now: any `401`, `403` with exact message `User is disabled`, and `404` with exact message `User profile not found`.
+  - Preserved normal authorization errors: ordinary admin-only `403` responses such as `Admin access required` remain visible page errors and do not log the user out.
+  - Updated `apiRequest()` to clear stored auth for session-ending authenticated responses.
+  - Updated `AdminPage` to call `clearAuth()`, `onSessionChange()`, and redirect to `/` for session-ending errors; verified `DashboardPage` already uses the same session-ending helper and protected-shell null render in the current baseline.
+  - Wrapped `syncSession` in `useCallback` in `App.tsx`.
+  - Added minimal Vitest frontend infrastructure and focused unit coverage for the session-ending helper.
+  - Updated `PROJECT_DOCS.md` status/decision/backlog and added a `USER_MANUAL.md` troubleshooting note.
+- Files changed for this task:
+  - `react-app/package.json`
+  - `react-app/package-lock.json`
+  - `react-app/src/App.tsx`
+  - `react-app/src/lib/api.ts`
+  - `react-app/src/lib/api.test.ts`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Verification:
+  - `npm test` from `react-app` -> 1 test file, 5 tests passed. Vitest/Vite printed toolchain warnings about deprecated esbuild options; tests passed.
+  - `npm run build` from `react-app` -> passed. Vite printed the existing chunk-size warning for the main JS bundle.
+- Notes:
+  - `npm install -D vitest` reported 5 npm audit findings (1 low, 3 moderate, 1 high). No `npm audit fix` was run because that can cause unrelated dependency churn.
+  - Backend tests were not run because no backend code changed.
+- Open issues:
+  - Frontend test coverage is still minimal; broader React Testing Library coverage for route guards/session page flows remains backlog.
+  - Existing unrelated dirty work remains in the worktree from FEAT-006, DATA-005, and seed-script work and was not modified intentionally by this task.
+
+## Status Update
 - Agent: Claude
 - Role: QA Reviewer
 - Task ID: DATA-005 (review)

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Chart from "chart.js/auto";
 import type { Chart as ChartType } from "chart.js";
 import AlertBanner from "../components/AlertBanner";
-import { apiRequest, isUnauthorizedError } from "../lib/api";
+import { apiRequest, isSessionEndingAuthError } from "../lib/api";
 import { clearAuth } from "../lib/auth";
 import {
   buildTimeBlocks,
@@ -313,7 +313,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     };
   }, [adminSummary]);
 
-  const handleUnauthorized = useCallback(() => {
+  const handleSessionEnded = useCallback(() => {
     setSessionInvalid(true);
     clearAuth();
     onSessionChange();
@@ -322,13 +322,13 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
 
   const handleApiError = useCallback(
     (error: unknown, fallbackMessage: string) => {
-      if (isUnauthorizedError(error)) {
-        handleUnauthorized();
+      if (isSessionEndingAuthError(error)) {
+        handleSessionEnded();
         return;
       }
       setAlert({ type: "danger", message: error instanceof Error ? error.message : fallbackMessage });
     },
-    [handleUnauthorized],
+    [handleSessionEnded],
   );
 
   const loadAdminSummary = useCallback(async (options: { preserveAlert?: boolean } = {}) => {
@@ -337,7 +337,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
       const summary = await apiRequest<DashboardSummary>("/dashboard/summary");
       setAdminSummary(summary);
     } catch (error) {
-      if (options.preserveAlert && !isUnauthorizedError(error)) {
+      if (options.preserveAlert && !isSessionEndingAuthError(error)) {
         return;
       }
       handleApiError(error, "Failed to load admin summary");
@@ -1257,7 +1257,7 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
         });
       }
     } catch (error) {
-      if (options.silent && !isUnauthorizedError(error)) {
+      if (options.silent && !isSessionEndingAuthError(error)) {
         return;
       }
       handleApiError(error, "Failed to load chart");

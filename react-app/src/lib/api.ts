@@ -14,8 +14,25 @@ export class ApiError extends Error {
   }
 }
 
-export function isUnauthorizedError(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 401;
+const sessionEndingMessages: Record<number, string> = {
+  403: "user is disabled",
+  404: "user profile not found",
+};
+
+function normalizeApiMessage(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+export function isSessionEndingAuthError(error: unknown): error is ApiError {
+  if (!(error instanceof ApiError)) {
+    return false;
+  }
+
+  if (error.status === 401) {
+    return true;
+  }
+
+  return normalizeApiMessage(error.message) === sessionEndingMessages[error.status];
 }
 
 interface ApiOptions {
@@ -51,10 +68,11 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
 
   if (!response.ok) {
     const detail = payload?.detail || `Request failed (${response.status})`;
-    if (auth && response.status === 401) {
+    const error = new ApiError(detail, response.status, payload);
+    if (auth && isSessionEndingAuthError(error)) {
       clearAuth();
     }
-    throw new ApiError(detail, response.status, payload);
+    throw error;
   }
 
   return payload as T;

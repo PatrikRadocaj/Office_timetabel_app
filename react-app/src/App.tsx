@@ -5,16 +5,16 @@ import AuthPage from "./pages/AuthPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPage from "./pages/AdminPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => getAuthToken());
   const [user, setUser] = useState<UserProfile | null>(() => getCurrentUser());
 
-  const syncSession = () => {
+  const syncSession = useCallback(() => {
     setToken(getAuthToken());
     setUser(getCurrentUser());
-  };
+  }, []);
 
   return (
     <Routes>

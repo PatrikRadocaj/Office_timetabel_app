@@ -38,7 +38,7 @@ Deprecated architecture:
 | Database | Firestore | Requires Firebase project and service account |
 | Authentication | Firebase Authentication | Email/password flow documented |
 | Frontend | React, Vite, TypeScript, Bootstrap 5, Chart.js | Located in `react-app`; accepted primary UI |
-| Testing | Pytest, documented QA checklist | `requirements-dev.txt` and `TEST_PROTOCOL.md` |
+| Testing | Pytest, Vitest, documented QA checklist | Backend tests under `backend/tests`; frontend unit tests use Vitest in `react-app`; QA protocol in `TEST_PROTOCOL.md` |
 | Local run | Uvicorn, optional Docker Compose | See `README.md` and `USER_MANUAL.md` |
 
 ## File Structure
@@ -98,6 +98,7 @@ C:\Users\User\Desktop\web projekt\
 | SCHED-001 | Match availability windows in office-local time | Done | Claude | Scheduler localizes availability and shift-preference hours to the agent's office timezone; midnight-ending slot leak fixed; TimeWindow now validated server-side; manual Munich smoke passed 2026-07-09 |
 | FEAT-005 | Announcements admin management | Done | Claude | New admin-only `/api/v1/announcements` CRUD API plus React admin UI to create, edit, activate/deactivate, and delete announcements; agent dashboards keep showing active announcements; manual smoke passed 2026-07-09 |
 | SEC-001 | Fix Firebase credential and runtime log git hygiene | Done | Codex | Removed tracked local service-account/runtime-log paths from the git index, added ignore rules, and documented local-only credential setup plus key rotation guidance |
+| AUTH-002 | Make deleted/disabled React sessions end cleanly | Done | Codex | React treats 401, `403 User is disabled`, and `404 User profile not found` as session-ending while preserving normal admin-only 403 errors |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
 | DEV-001 | Audit current dirty worktree before development | Proposed | Codex/Claude | Local modified files and runtime logs exist as of 2026-07-08 |
 
@@ -117,6 +118,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260709-001 | 2026-07-09 | Accepted | All `/api/v1/announcements` routes, including list, are admin-only; agents receive active announcements exclusively through `/api/v1/me/dashboard`. | The management list exposes inactive drafts, so it belongs to the admin surface; the dashboard already filters to the newest 10 active announcements. | Claude |
 | D-20260709-002 | 2026-07-09 | Accepted | Agents can directly update their own availability through `/api/v1/me/availability`; day-off and shift-swap actions require a future request/approval model before implementation. | Availability is already part of the agent scheduling profile, while day-off and swap requests need workflow state, reviewer actions, and schedule-impact handling. | Codex |
 | D-20260709-003 | 2026-07-09 | Accepted | Use Firestore aggregation counts for dashboard document totals and deterministic document ID prefix lookups for compact daily demand day operations. | These reads avoid streaming whole collections for counts or single-day demand views while preserving the compact daily demand storage model and suffixed additive documents. | Codex |
+| D-20260709-004 | 2026-07-09 | Accepted | React session-ending errors are limited to 401 plus authenticated `403 User is disabled` and `404 User profile not found` responses. | Deleted/disabled/stale profile sessions should clear local auth and return to login, while ordinary authorization failures such as non-admin access to admin APIs should remain visible errors. | Codex |
 
 ## Known Issues And Risks
 
@@ -139,10 +141,10 @@ C:\Users\User\Desktop\web projekt\
 4. Run React build and UI smoke checks.
 5. Add a FastAPI SPA catch-all before introducing additional React routes.
 6. Decide whether `GET /api/v1/dashboard/summary` should be admin-only; it currently requires only authentication, so agents can read company-wide coverage metrics.
-7. Add frontend test infrastructure, such as Vitest and React Testing Library, so routing guards like `ProtectedRoute` get automated coverage.
+7. Broaden frontend test coverage beyond the initial Vitest helper tests, especially routing guards like `ProtectedRoute` and session-ending page flows.
 8. Consider admin-specific dashboard copy for admins with no agent profile; the current generic dashboard says "You have a day off today" and shows an empty shift card.
-9. Treat `403` "User is disabled" and `404` "User profile not found" from `get_current_user` as frontend session-ending responses, like `401`, so deactivated/deleted users do not stay in a protected shell with a stale token.
-10. Harden React session callback identity by wrapping `syncSession` in `useCallback` in `react-app/src/App.tsx`; optionally add an `active` cancellation guard to `AdminPage` initialization for consistency with `DashboardPage`.
+9. Pin the backend `detail` strings used for frontend session-ending detection (`User is disabled` and `User profile not found`) with backend tests, or replace them with structured error codes so rewording cannot silently break logout behavior.
+10. Evaluate dependency updates for the current `npm audit` findings: `@babel/core` and `react-router` can take a non-breaking `npm audit fix`, while `esbuild` requires a Vite major upgrade. Do not run these updates without explicit user approval.
 11. Show the start-end range in the schedule assignment table's Time column.
 12. Clear stale `scheduleResult` when a new schedule generation attempt fails.
 13. Add office-timezone-aware schedule generation windows so admin browser timezone differences do not produce partial office-day windows.

@@ -261,6 +261,7 @@ Note: the schedule generation start/end controls use the admin browser's local t
 | Firebase errors | Missing or invalid `.env`/service account | Check Firebase project ID, API key, and service account path or `FIREBASE_SERVICE_ACCOUNT_JSON` |
 | Cloud Firestore quota is exceeded | Firestore rejected reads/writes for the configured project | Wait for quota reset, reduce repeated admin/API refreshes, or increase the Firebase/Google Cloud quota |
 | Login fails for seeded users | Seeded `users` docs are profiles only | Create matching Firebase Auth users or register through the app |
+| App returns to login while you are using it | Session expired, user profile was deleted, or user was disabled | Log in again; if it repeats, ask an admin to verify your Firestore user profile is active |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |
 | Port 8000 already in use | Another local server is running | Stop the old process or run Uvicorn on another port |
 | CORS error | Frontend origin not configured | Add the frontend URL to `CORS_ORIGINS` |
