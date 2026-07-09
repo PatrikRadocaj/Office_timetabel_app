@@ -31,7 +31,7 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
   - Add a schedule retention/cleanup capability, or formalize a manual Firestore purge policy for stale generated schedules.
 - Scope verification:
   - Left out as requested: `react-app/vite.config.ts`, `runtime_logs/**`, and the untracked seed scripts.
-  - Left out as unrelated in-flight work after the commit: `call-center-scheduler/backend/app/services/catalog_service.py` timezone-validation changes.
+  - Left out as unrelated in-flight work after the commit: `call-center-scheduler/backend/app/services/catalog_service.py`, `call-center-scheduler/backend/tests/test_catalog_update_nulls.py`, and `react-app/src/pages/AdminPage.tsx` timezone follow-up changes.
   - No Firestore operations were run.
 
 ## Status Update
