@@ -6,6 +6,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
+from app.models.common import TimeWindow
+
 
 class AgentSkillView(BaseModel):
     skill_id: str
@@ -49,5 +51,17 @@ class AgentDashboardRead(BaseModel):
     weekly_schedule: list[AgentDayShiftView] = Field(default_factory=list)
     hours_overview: HoursOverviewView
     skills: list[AgentSkillView] = Field(default_factory=list)
+    availability: list[TimeWindow] = Field(default_factory=list)
     announcements: list[AnnouncementView] = Field(default_factory=list)
 
+
+class AgentShiftListRead(BaseModel):
+    shifts: list[AgentDayShiftView] = Field(default_factory=list)
+
+
+class AgentAvailabilityRead(BaseModel):
+    availability: list[TimeWindow] = Field(default_factory=list)
+
+
+class AgentAvailabilityUpdate(BaseModel):
+    availability: list[TimeWindow] = Field(default_factory=list)

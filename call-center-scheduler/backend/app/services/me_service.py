@@ -7,6 +7,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from fastapi import HTTPException, status
+
+from app.models.common import TimeWindow
 from app.repositories.agents_repository import AgentsRepository
 from app.repositories.announcements_repository import AnnouncementsRepository
 from app.repositories.offices_repository import OfficesRepository
@@ -95,8 +98,45 @@ class MeService:
                 "overtime_hours": overtime_hours,
             },
             "skills": self._build_skills(agent=agent, skills_by_id=skills),
+            "availability": self._availability(agent),
             "announcements": self._load_announcements(),
         }
+
+    def shifts(self, current_user: dict[str, Any]) -> dict[str, Any]:
+        agent = self._resolve_agent_profile(current_user)
+        if not agent:
+            return {"shifts": []}
+
+        offices = {office["id"]: office for office in self.offices_repo.list()}
+        skills = {skill["id"]: skill for skill in self.skills_repo.list()}
+        assignments = self._collect_agent_slot_assignments(agent["id"])
+
+        return {
+            "shifts": self._build_shift_rows(
+                assignments=assignments,
+                offices_by_id=offices,
+                skills_by_id=skills,
+                include_empty_days=False,
+            )
+        }
+
+    def availability(self, current_user: dict[str, Any]) -> dict[str, Any]:
+        agent = self._resolve_agent_profile(current_user)
+        if not agent:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent profile not found")
+        return {"availability": self._availability(agent)}
+
+    def update_availability(self, current_user: dict[str, Any], availability: list[TimeWindow]) -> dict[str, Any]:
+        agent = self._resolve_agent_profile(current_user)
+        if not agent:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent profile not found")
+
+        payload = {"availability": [window.model_dump() for window in availability]}
+        updated = self.agents_repo.update(agent["id"], payload)
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent profile not found")
+
+        return {"availability": self._availability(updated)}
 
     def _resolve_agent_profile(self, current_user: dict[str, Any]) -> dict[str, Any] | None:
         uid = str(current_user.get("id", ""))
@@ -122,25 +162,26 @@ class MeService:
 
     def _collect_agent_slot_assignments(self, agent_id: str) -> list[dict[str, Any]]:
         schedules = self.schedules_repo.list(order_by="generated_at")
-        latest_assignment_by_slot: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        seen_slot_keys: set[tuple[str, str, str, str]] = set()
+        agent_assignments: list[dict[str, Any]] = []
 
         for schedule in reversed(schedules):
             for assignment in schedule.get("assignments", []):
-                if agent_id not in assignment.get("assigned_agent_ids", []):
-                    continue
-
                 key = (
-                    str(assignment.get("slot_start")),
-                    str(assignment.get("slot_end")),
+                    _as_utc(assignment["slot_start"]).isoformat(),
+                    _as_utc(assignment["slot_end"]).isoformat(),
                     str(assignment.get("office_id")),
                     str(assignment.get("skill_id")),
                 )
-                if key not in latest_assignment_by_slot:
-                    latest_assignment_by_slot[key] = assignment
+                if key in seen_slot_keys:
+                    continue
 
-        values = list(latest_assignment_by_slot.values())
-        values.sort(key=lambda entry: _as_utc(entry["slot_start"]))
-        return values
+                seen_slot_keys.add(key)
+                if agent_id in assignment.get("assigned_agent_ids", []):
+                    agent_assignments.append(assignment)
+
+        agent_assignments.sort(key=lambda entry: _as_utc(entry["slot_start"]))
+        return agent_assignments
 
     def _build_weekly_schedule(
         self,
@@ -152,9 +193,27 @@ class MeService:
         if not agent:
             return [self._empty_day_row(week_start + timedelta(days=offset)) for offset in range(7)]
 
-        rows_by_day: dict[date, list[dict[str, Any]]] = defaultdict(list)
         week_end = week_start + timedelta(days=6)
         assignments = self._collect_agent_slot_assignments(agent["id"])
+        return self._build_shift_rows(
+            assignments=assignments,
+            offices_by_id=offices_by_id,
+            skills_by_id=skills_by_id,
+            start_date=week_start,
+            end_date=week_end,
+            include_empty_days=True,
+        )
+
+    def _build_shift_rows(
+        self,
+        assignments: list[dict[str, Any]],
+        offices_by_id: dict[str, dict[str, Any]],
+        skills_by_id: dict[str, dict[str, Any]],
+        start_date: date | None = None,
+        end_date: date | None = None,
+        include_empty_days: bool = False,
+    ) -> list[dict[str, Any]]:
+        rows_by_day: dict[date, list[dict[str, Any]]] = defaultdict(list)
 
         for assignment in assignments:
             office_id = str(assignment.get("office_id"))
@@ -165,7 +224,9 @@ class MeService:
             slot_end_local = _as_utc(assignment["slot_end"]).astimezone(local_tz)
             local_day = slot_start_local.date()
 
-            if local_day < week_start or local_day > week_end:
+            if start_date and local_day < start_date:
+                continue
+            if end_date and local_day > end_date:
                 continue
 
             rows_by_day[local_day].append(
@@ -179,12 +240,19 @@ class MeService:
                 }
             )
 
-        weekly_rows: list[dict[str, Any]] = []
-        for offset in range(7):
-            current_day = week_start + timedelta(days=offset)
+        if include_empty_days:
+            if start_date is None or end_date is None:
+                return []
+            days = [start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)]
+        else:
+            days = sorted(rows_by_day)
+
+        shift_rows: list[dict[str, Any]] = []
+        for current_day in days:
             day_entries = rows_by_day.get(current_day, [])
             if not day_entries:
-                weekly_rows.append(self._empty_day_row(current_day))
+                if include_empty_days:
+                    shift_rows.append(self._empty_day_row(current_day))
                 continue
 
             day_entries.sort(key=lambda entry: entry["slot_start"])
@@ -194,7 +262,7 @@ class MeService:
             skills = sorted({entry["skill_name"] for entry in day_entries})
             total_hours = round(sum((entry["slot_end"] - entry["slot_start"]).total_seconds() / 3600 for entry in day_entries), 2)
 
-            weekly_rows.append(
+            shift_rows.append(
                 {
                     "date": current_day.isoformat(),
                     "day_name": current_day.strftime("%A"),
@@ -207,7 +275,7 @@ class MeService:
                 }
             )
 
-        return weekly_rows
+        return shift_rows
 
     @staticmethod
     def _empty_day_row(current_day: date) -> dict[str, Any]:
@@ -240,6 +308,20 @@ class MeService:
                 }
             )
         return result
+
+    @staticmethod
+    def _availability(agent: dict[str, Any] | None) -> list[dict[str, int]]:
+        if not agent:
+            return []
+
+        return [
+            {
+                "day_of_week": int(window.get("day_of_week", 0)),
+                "start_hour": int(window.get("start_hour", 0)),
+                "end_hour": int(window.get("end_hour", 0)),
+            }
+            for window in agent.get("availability", [])
+        ]
 
     def _load_announcements(self) -> list[dict[str, Any]]:
         rows = self.announcements_repo.list(order_by="created_at")

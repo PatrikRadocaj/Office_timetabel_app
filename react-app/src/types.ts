@@ -136,6 +136,25 @@ export interface ScheduleGenerationResponse {
   uncovered_demand: number;
 }
 
+export interface AgentDayShift {
+  date: string;
+  day_name: string;
+  shift_start: string | null;
+  shift_end: string | null;
+  office: string;
+  required_skills: string[];
+  total_hours: number;
+  break_time?: string | null;
+}
+
+export interface AgentShiftListResponse {
+  shifts: AgentDayShift[];
+}
+
+export interface AgentAvailabilityResponse {
+  availability: TimeWindow[];
+}
+
 export interface AgentDashboardData {
   full_name: string;
   today_date: string;
@@ -152,15 +171,7 @@ export interface AgentDashboardData {
     total_hours: number;
     break_time: string | null;
   } | null;
-  weekly_schedule: Array<{
-    date: string;
-    day_name: string;
-    shift_start: string | null;
-    shift_end: string | null;
-    office: string;
-    required_skills: string[];
-    total_hours: number;
-  }>;
+  weekly_schedule: AgentDayShift[];
   hours_overview: {
     weekly_max_hours: number;
     hours_worked_week: number;
@@ -173,6 +184,7 @@ export interface AgentDashboardData {
     proficiency: number;
     proficiency_pct: number;
   }>;
+  availability: TimeWindow[];
   announcements: Array<{
     id: string;
     title: string;
