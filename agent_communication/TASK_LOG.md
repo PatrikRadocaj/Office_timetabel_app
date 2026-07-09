@@ -3,6 +3,38 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: INTEG-001 closeout
+- Timestamp: 2026-07-09 10:37:22 +02:00
+- Current state: Complete and committed.
+- Commit hash:
+  - `c31f5e4546c0ec22fcd6a6b8812ec3dab57a61c9` (`fix: guard admin catalog integrity`)
+- Changed files in commit:
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/tests/test_catalog_update_nulls.py`
+  - `react-app/src/lib/api.ts`
+  - `react-app/src/lib/api.test.ts`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Commands run:
+  - `python -m pytest backend\\tests` in `call-center-scheduler` -> 51 passed
+  - `npm test` in `react-app` -> 7 tests passed
+  - `npm run build` in `react-app` -> passed
+  - `git status --short` before commit -> confirmed `react-app/vite.config.ts` and the two seed scripts stayed out of scope
+- Done:
+  - Committed the admin catalog integrity guards: duplicate-name update checks, delete-time reference-count 409s, and agent weekly-hours hard-limit parity.
+  - Added the backlog item for schedule retention/cleanup so historical generated schedules do not make office/skill deletes permanently unsatisfiable.
+  - Applied the small frontend polish so `formatErrorDetail()` reads FastAPI validation-entry `msg` fields, and added a Vitest case covering the 422-array format.
+- Backlogged only:
+  - Add a schedule retention/cleanup capability, or formalize a manual Firestore purge policy for stale generated schedules.
+- Scope verification:
+  - Left out as requested: `react-app/vite.config.ts`, `runtime_logs/**`, and the untracked seed scripts.
+  - Left out as unrelated in-flight work after the commit: `call-center-scheduler/backend/app/services/catalog_service.py` timezone-validation changes.
+  - No Firestore operations were run.
+
+## Status Update
 - Agent: Claude
 - Role: QA Reviewer
 - Task ID: INTEG-001 (review)
