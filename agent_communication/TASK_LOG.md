@@ -5,6 +5,46 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 ## Status Update
 - Agent: Codex
 - Role: Driver
+- Task ID: DATA-006 + SCHED-002 closeout
+- Timestamp: 2026-07-09 12:26:00 +02:00
+- Current state: Complete. The pending worktree was split into two scoped implementation commits: DATA-006 and SCHED-002. The earlier TZ-001 gate is already satisfied by the existing commits `95c2ed3` and `3aa0484`.
+- Resolution:
+  - DATA-006 commit: `b8c1ea1` (`fix: harden compact demand documents`)
+  - SCHED-002 commit: `6a2e071` (`fix: use only active schedules for visibility`)
+  - TZ-001 gate status: satisfied before this closeout. `backend/requirements.txt` already declares `tzdata`, the null-timezone update path returns `400`, and the user manual troubleshooting row is present.
+- Changed files by commit:
+  - DATA-006:
+    - `call-center-scheduler/backend/app/services/catalog_service.py`
+    - `call-center-scheduler/backend/tests/test_demand_compact_storage.py`
+    - `agent_communication/PROJECT_DOCS.md`
+    - `agent_communication/USER_MANUAL.md`
+    - `agent_communication/TASK_LOG.md`
+  - SCHED-002:
+    - `call-center-scheduler/backend/app/repositories/schedules_repository.py`
+    - `call-center-scheduler/backend/app/services/catalog_service.py`
+    - `call-center-scheduler/backend/app/services/dashboard_service.py`
+    - `call-center-scheduler/backend/app/services/me_service.py`
+    - `call-center-scheduler/backend/app/services/scheduler_service.py`
+    - `call-center-scheduler/backend/tests/test_dashboard_summary_counts.py`
+    - `call-center-scheduler/backend/tests/test_firestore_repository.py`
+    - `call-center-scheduler/backend/tests/test_me_quick_actions.py`
+    - `agent_communication/PROJECT_DOCS.md`
+    - `agent_communication/USER_MANUAL.md`
+- Commands run:
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 61 passed
+  - `npm run build` from `react-app` -> passed
+  - Live probe from `call-center-scheduler\backend`:
+    - `.venv\Scripts\python.exe -c "from app.repositories.schedules_repository import SchedulesRepository; rows = SchedulesRepository().list_active(order_by='-generated_at', limit=1); print('live_list_active_ok', len(rows), rows[0].get('id') if rows else 'none')"` -> `live_list_active_ok 0 none`
+- Live probe result:
+  - The fixed `list_active()` path succeeds against the real Firestore client with no `FailedPrecondition` index error.
+  - The collection currently returned `0` active schedules, which matches `RISK-009`: legacy schedules without `status: active` remain invisible until marked active or regenerated.
+- Notes:
+  - The current source-of-truth docs already use `D-20260709-007` for DATA-006, so SCHED-002 was recorded as `D-20260709-008` to avoid reusing a decision ID.
+  - Remaining uncommitted local items after these commits should stay out of scope: `react-app/vite.config.ts` line-ending-only change and the two untracked seed scripts under `call-center-scheduler/scripts/`.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
 - Task ID: DATA-006 compact demand edge cases and documentation
 - Timestamp: 2026-07-09 11:20:57 +02:00
 - Current state: Complete; compact demand expansion is hardened and compact-storage behavior is documented.
