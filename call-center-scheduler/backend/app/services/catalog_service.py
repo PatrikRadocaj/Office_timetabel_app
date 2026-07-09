@@ -42,6 +42,9 @@ def _ensure_aware_utc(timestamp: datetime | str) -> datetime:
 class OfficeService:
     def __init__(self):
         self.repo = OfficesRepository()
+        self.agents_repo = AgentsRepository()
+        self.demand_repo = DemandForecastsRepository()
+        self.schedule_repo = SchedulesRepository()
 
     def create(self, payload: OfficeCreate) -> dict[str, Any]:
         existing = self.repo.list(filters=[("name", "==", payload.name)], limit=1)
@@ -53,20 +56,47 @@ class OfficeService:
         return self.repo.list(order_by="name")
 
     def update(self, office_id: str, payload: OfficeUpdate) -> dict[str, Any]:
-        updated = self.repo.update(office_id, payload.model_dump(exclude_unset=True))
+        update_data = payload.model_dump(exclude_unset=True)
+        if "name" in update_data:
+            if self.repo.get(office_id) is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Office not found")
+            self._ensure_unique_name(update_data["name"], office_id)
+
+        updated = self.repo.update(office_id, update_data)
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Office not found")
         return updated
 
     def delete(self, office_id: str) -> dict[str, str]:
+        if self.repo.get(office_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Office not found")
+
+        counts = self._reference_counts(office_id)
+        _raise_referenced_conflict("Office", counts)
+
         if not self.repo.delete(office_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Office not found")
         return {"message": "Office deleted"}
+
+    def _ensure_unique_name(self, name: str, current_office_id: str) -> None:
+        existing = self.repo.list(filters=[("name", "==", name)], limit=2)
+        if any(row.get("id") != current_office_id for row in existing):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Office name already exists")
+
+    def _reference_counts(self, office_id: str) -> dict[str, int]:
+        return {
+            "agents": _count_filtered(self.agents_repo, [("office_id", "==", office_id)]),
+            "demand_forecasts": _count_filtered(self.demand_repo, [("office_id", "==", office_id)]),
+            "schedules": _count_schedules_referencing(self.schedule_repo, office_id=office_id),
+        }
 
 
 class SkillService:
     def __init__(self):
         self.repo = SkillsRepository()
+        self.agents_repo = AgentsRepository()
+        self.demand_repo = DemandForecastsRepository()
+        self.schedule_repo = SchedulesRepository()
 
     def create(self, payload: SkillCreate) -> dict[str, Any]:
         existing = self.repo.list(filters=[("name", "==", payload.name)], limit=1)
@@ -78,15 +108,39 @@ class SkillService:
         return self.repo.list(order_by="name")
 
     def update(self, skill_id: str, payload: SkillUpdate) -> dict[str, Any]:
-        updated = self.repo.update(skill_id, payload.model_dump(exclude_unset=True))
+        update_data = payload.model_dump(exclude_unset=True)
+        if "name" in update_data:
+            if self.repo.get(skill_id) is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+            self._ensure_unique_name(update_data["name"], skill_id)
+
+        updated = self.repo.update(skill_id, update_data)
         if not updated:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
         return updated
 
     def delete(self, skill_id: str) -> dict[str, str]:
+        if self.repo.get(skill_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+        counts = self._reference_counts(skill_id)
+        _raise_referenced_conflict("Skill", counts)
+
         if not self.repo.delete(skill_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
         return {"message": "Skill deleted"}
+
+    def _ensure_unique_name(self, name: str, current_skill_id: str) -> None:
+        existing = self.repo.list(filters=[("name", "==", name)], limit=2)
+        if any(row.get("id") != current_skill_id for row in existing):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Skill name already exists")
+
+    def _reference_counts(self, skill_id: str) -> dict[str, int]:
+        return {
+            "agents": _count_agents_referencing_skill(self.agents_repo, skill_id),
+            "demand_forecasts": _count_demand_referencing_skill(self.demand_repo, skill_id),
+            "schedules": _count_schedules_referencing(self.schedule_repo, skill_id=skill_id),
+        }
 
 
 class AgentService:
@@ -119,6 +173,16 @@ class AgentService:
 
     def update(self, agent_id: str, payload: AgentUpdate) -> dict[str, Any]:
         update_data = payload.model_dump(exclude_none=True)
+
+        weekly_max_hours = update_data.get("weekly_max_hours")
+        if weekly_max_hours is not None and weekly_max_hours > self.settings.max_weekly_hours_hard_limit:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "weekly_max_hours exceeds hard safety limit "
+                    f"({self.settings.max_weekly_hours_hard_limit})"
+                ),
+            )
 
         office_id = update_data.get("office_id")
         skills = update_data.get("skills")
@@ -153,6 +217,79 @@ class AgentService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid skill_id: {skill_id}",
                 )
+
+
+def _count_filtered(repo: Any, filters: list[tuple[str, str, Any]]) -> int:
+    if hasattr(repo, "count"):
+        return int(repo.count(filters=filters))
+    return len(repo.list(filters=filters))
+
+
+def _count_agents_referencing_skill(repo: Any, skill_id: str) -> int:
+    return sum(
+        1
+        for agent in repo.list()
+        if any(_skill_entry_id(entry) == skill_id for entry in agent.get("skills", []))
+    )
+
+
+def _count_demand_referencing_skill(repo: Any, skill_id: str) -> int:
+    count = 0
+    for document in repo.list():
+        if document.get("skill_id") == skill_id:
+            count += 1
+            continue
+
+        if any(_skill_entry_id(entry) == skill_id for entry in document.get("skill_demands", [])):
+            count += 1
+    return count
+
+
+def _count_schedules_referencing(
+    repo: Any,
+    *,
+    office_id: str | None = None,
+    skill_id: str | None = None,
+) -> int:
+    count = 0
+    for schedule in repo.list():
+        assignments = schedule.get("assignments", [])
+        if any(_assignment_matches(assignment, office_id=office_id, skill_id=skill_id) for assignment in assignments):
+            count += 1
+    return count
+
+
+def _assignment_matches(
+    assignment: dict[str, Any],
+    *,
+    office_id: str | None = None,
+    skill_id: str | None = None,
+) -> bool:
+    if office_id is not None and assignment.get("office_id") == office_id:
+        return True
+    if skill_id is not None and assignment.get("skill_id") == skill_id:
+        return True
+    return False
+
+
+def _skill_entry_id(entry: Any) -> str | None:
+    if isinstance(entry, dict):
+        return entry.get("skill_id")
+    return getattr(entry, "skill_id", None)
+
+
+def _raise_referenced_conflict(resource_name: str, reference_counts: dict[str, int]) -> None:
+    total_references = sum(reference_counts.values())
+    if total_references <= 0:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "message": f"{resource_name} cannot be deleted because existing records still reference it.",
+            "reference_counts": reference_counts,
+        },
+    )
 
 
 class DemandService:

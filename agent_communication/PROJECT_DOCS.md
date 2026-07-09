@@ -99,6 +99,7 @@ C:\Users\User\Desktop\web projekt\
 | FEAT-005 | Announcements admin management | Done | Claude | New admin-only `/api/v1/announcements` CRUD API plus React admin UI to create, edit, activate/deactivate, and delete announcements; agent dashboards keep showing active announcements; manual smoke passed 2026-07-09 |
 | SEC-001 | Fix Firebase credential and runtime log git hygiene | Done | Codex | Removed tracked local service-account/runtime-log paths from the git index, added ignore rules, and documented local-only credential setup plus key rotation guidance |
 | AUTH-002 | Make deleted/disabled React sessions end cleanly | Done | Codex | React treats 401, `403 User is disabled`, and `404 User profile not found` as session-ending while preserving normal admin-only 403 errors |
+| INTEG-001 | Harden admin catalog update/delete integrity | Done | Codex | Office/skill update rejects duplicate names, agent update enforces hard weekly-hour limits, and office/skill delete returns 409 with reference counts instead of cascading |
 | QA-001 | Refresh QA baseline after current local changes | Proposed | Codex/Claude | Existing docs show prior QA from 2026-05-09; current code has local modifications |
 | DEV-001 | Audit current dirty worktree before development | Proposed | Codex/Claude | Local modified files and runtime logs exist as of 2026-07-08 |
 
@@ -119,6 +120,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260709-002 | 2026-07-09 | Accepted | Agents can directly update their own availability through `/api/v1/me/availability`; day-off and shift-swap actions require a future request/approval model before implementation. | Availability is already part of the agent scheduling profile, while day-off and swap requests need workflow state, reviewer actions, and schedule-impact handling. | Codex |
 | D-20260709-003 | 2026-07-09 | Accepted | Use Firestore aggregation counts for dashboard document totals and deterministic document ID prefix lookups for compact daily demand day operations. | These reads avoid streaming whole collections for counts or single-day demand views while preserving the compact daily demand storage model and suffixed additive documents. | Codex |
 | D-20260709-004 | 2026-07-09 | Accepted | React session-ending errors are limited to 401 plus authenticated `403 User is disabled` and `404 User profile not found` responses. | Deleted/disabled/stale profile sessions should clear local auth and return to login, while ordinary authorization failures such as non-admin access to admin APIs should remain visible errors. | Codex |
+| D-20260709-005 | 2026-07-09 | Accepted | Admin catalog deletes are guarded, not cascaded: offices and skills cannot be deleted while agents, demand forecasts, or generated schedules still reference them. | Silent cascade or rewrite would risk data loss and schedule corruption; admins should see reference counts and explicitly clean up dependent data first. | Codex |
 
 ## Known Issues And Risks
 
@@ -148,18 +150,17 @@ C:\Users\User\Desktop\web projekt\
 11. Show the start-end range in the schedule assignment table's Time column.
 12. Clear stale `scheduleResult` when a new schedule generation attempt fails.
 13. Add office-timezone-aware schedule generation windows so admin browser timezone differences do not produce partial office-day windows.
-14. Add referential-integrity guards for office and skill deletes, returning `409` with reference counts or documenting an intentional cascade policy.
-15. Enforce office and skill name uniqueness on update, matching the create-path `409`; also apply the weekly max-hours hard-limit check in agent update.
-16. Validate office timezone values as real IANA zones on create/update, or replace free-text timezone entry with a timezone select in the UI.
-17. Document compact-storage contract changes for single-slot, bulk, and CSV demand endpoints: only 30/60-minute slots, priority is per skill-day, and same-slot re-posts replace quantity instead of accumulating; decide whether the CSV template needs a note.
-18. Harden compact demand expansion so malformed documents missing `forecast_date` or `interval_minutes` are skipped with a log entry instead of raising a 500.
-19. Keep demand manual copy clear that `replace_existing_day=false` writes suffixed documents and stacks demand additively.
-20. Refactor compact demand seed/migration scripts to reuse `DemandService._daily_document_payload` and avoid schema drift.
-21. After Firestore quota recovers, run one targeted live check (one day-view load or one replace-day save) to confirm the `FieldPath.document_id()` prefix range query works against the real Firestore client, not only the test fakes.
-22. Design and implement day-off request workflow: request model, agent create/list status, admin review/approve/reject, and scheduler/schedule-impact handling.
-23. Design and implement shift-swap request workflow: request model, eligible target shift/agent selection, approval flow, and schedule update policy.
-24. Update the task board with the first approved development task.
-25. Keep the user manual current as features stabilize.
+14. Add a schedule retention/cleanup capability, or record a manual Firestore purge policy, so office/skill delete guards can eventually clear historical generated-schedule references instead of making old references permanent.
+15. Validate office timezone values as real IANA zones on create/update, or replace free-text timezone entry with a timezone select in the UI.
+16. Document compact-storage contract changes for single-slot, bulk, and CSV demand endpoints: only 30/60-minute slots, priority is per skill-day, and same-slot re-posts replace quantity instead of accumulating; decide whether the CSV template needs a note.
+17. Harden compact demand expansion so malformed documents missing `forecast_date` or `interval_minutes` are skipped with a log entry instead of raising a 500.
+18. Keep demand manual copy clear that `replace_existing_day=false` writes suffixed documents and stacks demand additively.
+19. Refactor compact demand seed/migration scripts to reuse `DemandService._daily_document_payload` and avoid schema drift.
+20. After Firestore quota recovers, run one targeted live check (one day-view load or one replace-day save) to confirm the `FieldPath.document_id()` prefix range query works against the real Firestore client, not only the test fakes.
+21. Design and implement day-off request workflow: request model, agent create/list status, admin review/approve/reject, and scheduler/schedule-impact handling.
+22. Design and implement shift-swap request workflow: request model, eligible target shift/agent selection, approval flow, and schedule update policy.
+23. Update the task board with the first approved development task.
+24. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 

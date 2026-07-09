@@ -3,6 +3,64 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: INTEG-001 (review)
+- Timestamp: 2026-07-09
+- Current state: Review complete. Verdict: APPROVED — no blockers. This implements the FEAT-003-era backlog findings (delete guards, update-path uniqueness, hard-limit parity) correctly, with genuinely good reference-shape coverage and tested frontend formatting.
+- QA-focus confirmations:
+  1. Delete guards count the right references: CONFIRMED — office deletes count agents (`office_id` filter, aggregation `count()` when available), demand forecasts (`office_id` filter, matches compact docs), and schedules whose assignments reference the office; skill deletes scan agent skill arrays, demand documents in BOTH legacy (`skill_id` field) and compact (`skill_demands` array) shapes, and schedule assignments. The dual legacy/compact demand handling is a nice catch.
+  2. No referenced office/skill can be deleted: CONFIRMED — `_raise_referenced_conflict` fires with 409 BEFORE `repo.delete`; tests assert the repo delete was never attempted. No cascade, no silent rewrite anywhere.
+  3. Duplicate update checks exclude the current record: CONFIRMED — `_ensure_unique_name` lists `name == X, limit=2` and conflicts only if a DIFFERENT id matches, so self-rename to the same name stays legal; renaming to another record's name yields the same 409 as create. Checked only when `name` is in the payload (`exclude_unset`), preserving partial updates.
+  4. Agent update hard limit matches create: CONFIRMED — same `> max_weekly_hours_hard_limit` check, same 400 status and message text, applied only when `weekly_max_hours` is provided.
+  5. Frontend formatting clear, session-ending intact: CONFIRMED — `formatErrorDetail` renders the structured 409 as "<message> References: agents: N, demand forecasts: N, schedules: N." (pinned by a fetch-mocked unit test), handles strings/arrays/objects without ever producing "[object Object]", and session-ending detection is unaffected: the disabled/missing-profile cases arrive as plain strings (passed through verbatim) and 401 matches on status alone.
+  6. Docs accurate: CONFIRMED — INTEG-001 task row, decision D-20260709-005 (guarded-not-cascaded), backlog items 14-15 removed as implemented with correct renumbering (no items lost), and a clear USER_MANUAL troubleshooting row stating deletes do not cascade.
+- Findings (ordered by severity — none blocking):
+  1. Low — Historical schedules make offices/skills permanently undeletable. Reference counting includes every generated schedule ever stored, and the app has no schedule deletion or retention mechanism — so once an office/skill appears in any schedule, its 409 can never be cleared through the app. This matches the approved spec (no cascade), but it is an operational dead-end; backlog a schedule retention/cleanup capability (or a documented decision that old schedules must be purged manually in Firestore) so the guard remains satisfiable.
+  2. Info — Read cost: skill/office deletes scan all agents, all demand documents, and all schedules client-side (skill references live inside arrays of maps, which Firestore cannot filter server-side). Acceptable for a rare admin action at current scale (150 agents / 35 demand docs); the office_id-filterable counts correctly use the DATA-005 aggregation `count(filters=...)`. Noting for RISK-008 awareness.
+  3. Info — Check-then-delete is not transactional; a reference created between the count and the delete slips through. Theoretical under single-admin usage; not worth Firestore transactions today.
+  4. Info — FastAPI 422 validation arrays render as repeated fallback text ("Request failed (422); ...") because validation entries use `msg`, not `message`. Rare in practice since the React UI pre-validates; mapping `msg` in `formatErrorDetail` would polish it.
+- Commands run:
+  - `python -m pytest backend/tests` -> 51 passed (matches claim)
+  - `npm test` (react-app) -> 1 file, 6 tests passed (matches claim)
+  - `npm run build` -> passed (pre-existing chunk-size warning only)
+  - No Firestore operations run.
+- Approval/blocker status: APPROVED — no blockers. INTEG-001 can be committed as a scoped commit (catalog_service.py, test_catalog_update_nulls.py, api.ts, api.test.ts, doc updates), excluding `runtime_logs/**`, seed scripts, and `vite.config.ts` as usual.
+- Recommended next step: Codex commits INTEG-001 scoped and adds the schedule-retention backlog item (finding 1); findings 2-4 are notes only.
+
+## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: INTEG-001 admin catalog CRUD integrity guards
+- Timestamp: 2026-07-09 10:27:41 +02:00
+- Current state: Complete; backend update/delete guards implemented and React admin errors now show structured 409 reference counts. Changes are not committed.
+- Completed:
+  - Office update rejects duplicate office names while allowing the current office's own name.
+  - Skill update rejects duplicate skill names while allowing the current skill's own name.
+  - Agent update enforces `MAX_WEEKLY_HOURS_HARD_LIMIT`, matching agent create behavior.
+  - Office delete now returns `409` when agents, demand forecasts, or generated schedules still reference the office.
+  - Skill delete now returns `409` when agents, demand forecasts, or generated schedules still reference the skill.
+  - Delete-conflict details include `reference_counts` for `agents`, `demand_forecasts`, and `schedules`.
+  - React API error formatting now renders structured conflict details as readable alert text, so AdminPage shows the backend reference counts clearly without cascade behavior.
+  - Updated `PROJECT_DOCS.md` status/decision/backlog and `USER_MANUAL.md` troubleshooting.
+- Files changed for this task:
+  - `call-center-scheduler/backend/app/services/catalog_service.py`
+  - `call-center-scheduler/backend/tests/test_catalog_update_nulls.py`
+  - `react-app/src/lib/api.ts`
+  - `react-app/src/lib/api.test.ts`
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `agent_communication/TASK_LOG.md`
+- Verification:
+  - `python -m pytest backend\tests\test_catalog_update_nulls.py` from `call-center-scheduler` -> 7 passed.
+  - `python -m pytest backend\tests` from `call-center-scheduler` -> 51 passed.
+  - `npm test` from `react-app` -> 1 test file, 6 tests passed. Vitest/Vite printed the existing toolchain deprecation warnings.
+  - `npm run build` from `react-app` -> passed. Vite printed the existing main-bundle chunk-size warning.
+- Open issues:
+  - No live Firestore smoke was run; this task was covered with service-level tests and build checks.
+  - Existing unrelated dirty work remains: `react-app/vite.config.ts` line-ending marker and untracked seed scripts.
+
+## Status Update
 - Agent: Codex
 - Role: Driver
 - Task ID: AUTH-002 closeout
