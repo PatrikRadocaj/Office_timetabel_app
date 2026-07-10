@@ -1848,7 +1848,7 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
     - `npm run build` from `react-app` -> passed
 - Commit hashes:
   - `6d0bf6a` - SCHED-004 feature closeout
-  - `59d1829` - generated-schedule cancellation script
+  - `212a97e` - generated-schedule cancellation script
 - User instructions:
   - Dry run first from repo root:
     - `python call-center-scheduler\scripts\cancel_generated_schedules.py`
