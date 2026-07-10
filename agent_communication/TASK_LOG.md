@@ -1822,3 +1822,38 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 - Manual cleanup step:
   - Archive/cancel or regenerate any existing active `generated_schedules` documents that contain cross-office assignments created before SCHED-004.
 - Next step: QA review should confirm fresh schedules generated after SCHED-004 no longer assign agents outside their home office, then archive/cancel/regenerate old invalid active schedules.
+
+## Status Update
+- Agent: Codex
+- Task ID: SCHED-004
+- Timestamp: 2026-07-10 10:19 +02:00
+- Current state: SCHED-004 committed; legacy-schedule remediation script added and ready for user execution.
+- Completed:
+  - Committed SCHED-004 as `6d0bf6a` (`feat: enforce same-office scheduling and shift blocks`).
+  - Added `call-center-scheduler/scripts/cancel_generated_schedules.py` as a dry-run-by-default maintenance script for cancelling specific active generated schedules.
+  - Kept the remediation flow index-free and deterministic: dry run lists active schedules with ids, generated timestamps, assignment counts, and assigned-slot counts; execute mode writes a backup into `runtime_logs/` before setting `status: cancelled`.
+- In progress: None.
+- Blockers:
+  - SCHED-004 remains operationally blocked until the two legacy active schedules from Claude's QA are cancelled and a fresh schedule is generated.
+- Files touched:
+  - `agent_communication/TASK_LOG.md`
+  - `call-center-scheduler/scripts/cancel_generated_schedules.py`
+- Commands/tests run:
+  - `git status --short --branch`
+  - `git log --oneline -1`
+  - `python call-center-scheduler\scripts\cancel_generated_schedules.py --help` -> passed
+  - Earlier verification retained from the implementation closeout:
+    - `python -m pytest backend\tests` -> 92 passed
+    - `npm test -- --run` from `react-app` -> 7 passed
+    - `npm run build` from `react-app` -> passed
+- Commit hashes:
+  - `6d0bf6a` - SCHED-004 feature closeout
+  - `59d1829` - generated-schedule cancellation script
+- User instructions:
+  - Dry run first from repo root:
+    - `python call-center-scheduler\scripts\cancel_generated_schedules.py`
+  - Then cancel ONLY the two legacy active schedules identified by QA:
+    - `python call-center-scheduler\scripts\cancel_generated_schedules.py --execute --ids bglxododpbsami2VYyCp,rNBXv3DUY9qpQo2G8pyK`
+  - After the cancel completes, generate a fresh schedule from `/admin`.
+  - Then rerun the authenticated agent + admin browser block-swap smoke; that closes the remaining live verification for both SCHED-004 and FEAT-008.
+- Next step: User runs the cancel script for the two legacy ids, generates a fresh schedule from `/admin`, and then repeats the authenticated agent + admin block-swap smoke.
