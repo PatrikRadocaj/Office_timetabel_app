@@ -92,6 +92,7 @@ def test_rank_eligible_agents_localizes_by_agent_office() -> None:
 
     ranked = service._rank_eligible_agents(
         agents=[agent],
+        demand_office_id="office-berlin",
         skill_id="skill-a",
         slot_start=_utc(2026, 7, 13, 8),
         slot_end=_utc(2026, 7, 13, 9),
@@ -105,6 +106,7 @@ def test_rank_eligible_agents_localizes_by_agent_office() -> None:
 
     ranked_outside = service._rank_eligible_agents(
         agents=[agent],
+        demand_office_id="office-berlin",
         skill_id="skill-a",
         slot_start=_utc(2026, 7, 13, 6),
         slot_end=_utc(2026, 7, 13, 7),
@@ -115,6 +117,29 @@ def test_rank_eligible_agents_localizes_by_agent_office() -> None:
         office_timezones=office_timezones,
     )
     assert ranked_outside == []
+
+
+def test_rank_eligible_agents_rejects_cross_office_agent() -> None:
+    service = SchedulerService.__new__(SchedulerService)
+    agent = _agent(MONDAY_9_17)
+    agent_state = {"agent-1": {"weekly_hours": 0.0, "last_slot_start": None, "assignments": []}}
+    office_timezones = {"office-berlin": BERLIN, "office-london": ZoneInfo("Europe/London")}
+    skills = {"skill-a": {"min_proficiency": 1}}
+
+    ranked = service._rank_eligible_agents(
+        agents=[agent],
+        demand_office_id="office-london",
+        skill_id="skill-a",
+        slot_start=_utc(2026, 7, 13, 8),
+        slot_end=_utc(2026, 7, 13, 9),
+        used_agents_this_slot=set(),
+        agent_state=agent_state,
+        skills=skills,
+        slot_hours=1.0,
+        office_timezones=office_timezones,
+    )
+
+    assert ranked == []
 
 
 def test_time_window_accepts_full_day_bounds() -> None:

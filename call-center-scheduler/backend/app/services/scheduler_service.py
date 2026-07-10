@@ -89,6 +89,7 @@ class SchedulerService:
 
                 eligible_agents = self._rank_eligible_agents(
                     agents=agents,
+                    demand_office_id=office_id,
                     skill_id=skill_id,
                     slot_start=slot_start,
                     slot_end=slot_end,
@@ -175,6 +176,7 @@ class SchedulerService:
     def _rank_eligible_agents(
         self,
         agents: list[dict[str, Any]],
+        demand_office_id: str,
         skill_id: str,
         slot_start: datetime,
         slot_end: datetime,
@@ -190,6 +192,9 @@ class SchedulerService:
         for agent in agents:
             agent_id = agent["id"]
             if agent_id in used_agents_this_slot:
+                continue
+
+            if str(agent.get("office_id")) != str(demand_office_id):
                 continue
 
             if not self._agent_has_skill(agent, skill_id, min_proficiency):

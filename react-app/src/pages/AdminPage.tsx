@@ -210,9 +210,39 @@ const formatAvailabilityLabel = (window: TimeWindow): string => {
   return `${day?.shortLabel || `Day ${window.day_of_week}`} ${formatHour(window.start_hour)}-${formatHour(window.end_hour)}`;
 };
 
+const formatShiftDateTime = (value: string, timeZone?: string | null): string => {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) {
+    return String(value || "-");
+  }
+  return dt.toLocaleString([], {
+    timeZone: timeZone || undefined,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
+const formatShiftTime = (value: string, timeZone?: string | null): string => {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) {
+    return "-";
+  }
+  return dt.toLocaleTimeString([], {
+    timeZone: timeZone || undefined,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
 const formatSwapShift = (shift: ShiftSwapOption, includeAgent = false): string => {
   const agent = includeAgent ? `${shift.agent_name} | ` : "";
-  return `${agent}${formatDateTime(shift.slot_start)} - ${formatDateTime(shift.slot_end)} | ${shift.office_name} | ${shift.skill_name}`;
+  return `${agent}${formatShiftDateTime(shift.slot_start, shift.office_timezone)} - ${formatShiftTime(
+    shift.slot_end,
+    shift.office_timezone,
+  )} | ${shift.office_name} | ${shift.skill_name}`;
 };
 
 interface AvailabilityEditorProps {

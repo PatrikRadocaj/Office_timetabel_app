@@ -1,6 +1,6 @@
 # Project Documentation Hub
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 ## Project Overview
 
@@ -94,6 +94,7 @@ C:\Users\User\Desktop\web projekt\
 | FEAT-006 | Implement agent dashboard quick actions | Done | Codex | View All My Shifts, Update Availability, Request Day Off, and Request Shift Swap are real agent-facing flows |
 | FEAT-007 | Implement day-off request workflow | Done | Codex | Agents can create/list own requests; admins can list and approve/reject requests; approval records status only and does not mutate schedules |
 | FEAT-008 | Implement shift-swap request workflow | Done | Codex | Agents can request swaps from active same-office shifts; admins can approve/reject; approval revalidates and swaps generated schedule assignments |
+| SCHED-004 | Enforce same-office scheduling and shift-block swaps | Done | Codex | Scheduler assigns agents only to demand in their home office; shift-swap choices are continuous daily shift blocks instead of raw stored slots |
 | SCHED-003 | Atomic shift-swap application | Proposed | Codex/Claude | Add a Firestore `batch_update` helper and apply cross-schedule swap approvals atomically before production use; today any mid-failure between the two writes can strand a half-applied swap while the request stays pending and retries 409 |
 | DATA-003 | Compact demand forecast storage | Done | Codex | Daily demand saves now write one Firestore document per office/date/interval and expand to slots only in memory |
 | DATA-004 | Migrate legacy demand slot documents to compact storage | Done | Codex | Legacy per-slot demand documents were backed up, compacted into 35 daily documents, and deleted from Firestore |
@@ -132,6 +133,7 @@ C:\Users\User\Desktop\web projekt\
 | D-20260709-008 | 2026-07-09 | Accepted | Personal dashboards, agent shift lists, admin summary coverage, and demand day coverage use only generated schedules with `status: active`; `cancelled` and `archived` schedules are retained but ignored. | This makes the intended visible schedule set explicit and avoids reading every historical generated schedule forever. Within the active set, the newest active schedule still overrides older active assignments for the same slot. | Codex |
 | D-20260709-009 | 2026-07-09 | Accepted | Day-off requests use an approval workflow where approval records the request status only; generated schedules and assignments are not changed automatically. | This gives agents and admins a real auditable request workflow without silently changing schedule assignments before a separate schedule-impact policy is designed. | Codex |
 | D-20260709-010 | 2026-07-09 | Accepted | Shift-swap requests mutate generated schedules only on admin approval, and approval must revalidate that both active visible assignments still exist, are in the same office, match both agents' skills, fit both agents' availability, and do not create overlapping or duplicate assignments. | Shift swaps are intended to be operational changes, but schedule integrity must be preserved against stale requests and invalid cross-skill/cross-office swaps. | Codex |
+| D-20260710-001 | 2026-07-10 | Accepted | The scheduler may assign an agent only to demand for the agent's home office, and shift swaps are requested/reviewed as continuous same-office daily shift blocks made from adjacent stored assignments. | Agents should not work across offices hour by hour; stored 30-minute slots remain an internal representation, while users reason about full shift blocks. Existing generated schedules with cross-office assignments should be archived/cancelled or regenerated rather than silently mutated. | Codex |
 ## Known Issues And Risks
 
 | ID | Area | Issue/Risk | Severity | Status | Notes |
@@ -147,6 +149,7 @@ C:\Users\User\Desktop\web projekt\
 | RISK-009 | Data migration | Generated schedule documents created before SCHED-002 may not have a `status` field. | Medium | Open | New reads use `status == active`; mark legacy schedules `active`, archive them, or regenerate schedules during deployment depending on whether they should remain visible. |
 | RISK-010 | Scheduling | Approved day-off requests do not automatically remove assignments or regenerate schedules. | Medium | Open | This is the accepted first workflow policy for FEAT-007; admins must account for approved requests manually until schedule-impact automation is designed. |
 | RISK-011 | Scheduling | Shift-swap approval updates generated schedule documents outside a Firestore transaction. | Medium | Open | Current implementation revalidates before updating and supports same-schedule or two-schedule swaps, but any failure between cross-schedule writes can strand a half-applied swap while the request stays pending and retries 409. Fix with SCHED-003 before production use. |
+| RISK-012 | Scheduling data | Generated schedules created before SCHED-004 may contain cross-office agent assignments. | High | Open | Do not silently mutate historical schedules. Archive/cancel affected schedules or regenerate schedules after the same-office scheduler fix so personal dashboards and shift-swap options no longer expose invalid cross-office work. |
 ## Next Steps / Backlog
 
 1. User reviews and approves or revises the collaboration protocol.
@@ -170,8 +173,9 @@ C:\Users\User\Desktop\web projekt\
 19. Extend the day-off request workflow with an approved schedule-impact policy, such as warning on conflicts, assignment removal, or explicit regeneration flow.
 20. Refactor the duplicated `_resolve_agent_profile` logic from `MeService`, `DayOffRequestService`, and `ShiftSwapRequestService` into a shared helper on the next touch.
 21. Implement SCHED-003 before production use: add a `batch_update` helper to `FirestoreRepository` using `db.batch()` and apply cross-schedule shift swaps atomically.
-22. Update the task board with the first approved development task.
-23. Keep the user manual current as features stabilize.
+22. Add an admin maintenance control or documented script to archive/cancel invalid generated schedules, including schedules with cross-office assignments created before SCHED-004.
+23. Update the task board with the first approved development task.
+24. Keep the user manual current as features stabilize.
 
 ## Documentation Maintenance Rules
 

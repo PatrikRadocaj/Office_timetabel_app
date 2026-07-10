@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 import AlertBanner from "../components/AlertBanner";
 import { apiRequest, isSessionEndingAuthError } from "../lib/api";
 import { clearAuth } from "../lib/auth";
-import { formatDate, formatDateTime, formatHours, formatTime } from "../lib/format";
+import { formatDate, formatHours, formatTime } from "../lib/format";
 import type {
   AgentAvailabilityResponse,
   AgentDashboardData,
   AgentDayShift,
   AgentShiftListResponse,
   DayOffRequest,
+  ShiftSwapAssignmentRef,
   ShiftSwapOption,
   ShiftSwapOptionsResponse,
   ShiftSwapRequest,
@@ -23,6 +24,12 @@ interface DashboardPageProps {
 }
 
 type QuickActionPanel = "dayOff" | "shiftSwap" | "shifts" | "availability" | null;
+type ShiftSwapOptionValue = {
+  schedule_id: string;
+  assignment_key: string;
+  assignment_refs: ShiftSwapAssignmentRef[];
+  agent_id: string;
+};
 
 const dayOptions = [
   { value: 0, label: "Monday", shortLabel: "Mon" },
@@ -77,14 +84,59 @@ const optionValue = (option: ShiftSwapOption): string =>
   JSON.stringify({
     schedule_id: option.schedule_id,
     assignment_key: option.assignment_key,
+    assignment_refs:
+      option.assignment_refs && option.assignment_refs.length
+        ? option.assignment_refs
+        : [{ schedule_id: option.schedule_id, assignment_key: option.assignment_key }],
     agent_id: option.agent_id,
   });
 
-const parseOptionValue = (value: string): { schedule_id: string; assignment_key: string; agent_id: string } => JSON.parse(value);
+const parseOptionValue = (value: string): ShiftSwapOptionValue => {
+  const parsed = JSON.parse(value) as Partial<ShiftSwapOptionValue>;
+  return {
+    schedule_id: String(parsed.schedule_id || ""),
+    assignment_key: String(parsed.assignment_key || ""),
+    assignment_refs:
+      parsed.assignment_refs && parsed.assignment_refs.length
+        ? parsed.assignment_refs
+        : [{ schedule_id: String(parsed.schedule_id || ""), assignment_key: String(parsed.assignment_key || "") }],
+    agent_id: String(parsed.agent_id || ""),
+  };
+};
+
+const formatDateTimeForShift = (value: string, timeZone?: string | null): string => {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) {
+    return String(value || "-");
+  }
+  return dt.toLocaleString([], {
+    timeZone: timeZone || undefined,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
+const formatTimeForShift = (value: string, timeZone?: string | null): string => {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) {
+    return "-";
+  }
+  return dt.toLocaleTimeString([], {
+    timeZone: timeZone || undefined,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
 
 const formatShiftSwapOption = (option: ShiftSwapOption, includeAgent = false): string => {
   const agent = includeAgent ? `${option.agent_name} | ` : "";
-  return `${agent}${formatDateTime(option.slot_start)} - ${formatTime(option.slot_end)} | ${option.office_name} | ${option.skill_name}`;
+  return `${agent}${formatDateTimeForShift(option.slot_start, option.office_timezone)} - ${formatTimeForShift(
+    option.slot_end,
+    option.office_timezone,
+  )} | ${option.office_name} | ${option.skill_name}`;
 };
 
 export default function DashboardPage({ user, onSessionChange }: DashboardPageProps) {
@@ -262,8 +314,10 @@ export default function DashboardPage({ user, onSessionChange }: DashboardPagePr
         body: {
           source_schedule_id: source.schedule_id,
           source_assignment_key: source.assignment_key,
+          source_assignment_refs: source.assignment_refs,
           target_schedule_id: target.schedule_id,
           target_assignment_key: target.assignment_key,
+          target_assignment_refs: target.assignment_refs,
           target_agent_id: target.agent_id,
           reason: shiftSwapForm.reason.trim() || null,
         },

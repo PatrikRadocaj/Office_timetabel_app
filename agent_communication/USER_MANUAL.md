@@ -1,7 +1,7 @@
 # User Manual
 
 Status: Draft template
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 ## Application Name
 
@@ -225,7 +225,7 @@ Agent dashboards show the newest 10 active announcements. Deactivated announceme
 1. Log in as an agent and open the dashboard.
 2. Use Request Day Off to open your day-off request form and history.
 3. Enter a start date, end date, and optional reason, then submit the request.
-4. Use Request Shift Swap to choose one of your active generated shifts and a same-office target shift assigned to another agent.
+4. Use Request Shift Swap to choose one of your active generated shift blocks and a same-office target shift block assigned to another agent.
 5. Add an optional reason and submit the swap request for admin review.
 6. Use View All My Shifts to load every active generated shift currently assigned to you, beyond the next 7 days shown in the dashboard summary.
 7. Use Update Availability to add, edit, or remove your availability windows.
@@ -234,7 +234,7 @@ Agent dashboards show the newest 10 active announcements. Deactivated announceme
 
 Day-off requests can be pending, approved, or rejected. Approval records the request status only; it does not automatically remove generated assignments or regenerate schedules.
 
-Shift-swap requests can be pending, approved, or rejected. Admin approval swaps the two agents in the active generated schedule assignments only after the backend revalidates that both assignments still exist, are in the same office, both agents have the required skills, both agents are available for the new slots, and the swap does not create duplicate or overlapping assignments.
+Shift-swap requests can be pending, approved, or rejected. The app shows continuous daily shift blocks, not every stored 30-minute schedule slot. A block merges adjacent assigned slots for the same agent, same office, and same local day when there is no gap. Admin approval swaps the two agents across every underlying assignment in the selected blocks only after the backend revalidates that the assignments still exist, are in the same office, both agents belong to that office, both agents have the required skills, both agents are available for the new slots, and the swap does not create duplicate or overlapping assignments.
 
 ### Review Day-Off Requests
 
@@ -250,10 +250,10 @@ Shift-swap requests can be pending, approved, or rejected. Admin approval swaps 
 1. Log in as admin.
 2. Open the admin area.
 3. In Data Preview, open Shift-Swap Requests.
-4. Review the requester, target agent, source shift, target shift, reason, and status.
+4. Review the requester, target agent, source shift block, target shift block, reason, and status.
 5. For pending requests, add an optional review note and choose Approve or Reject.
 6. Approval revalidates the current active generated schedules before changing anything. If the assignments changed, skills no longer match, offices differ, availability no longer fits, or a duplicate/overlapping assignment would be created, the backend refuses the approval and shows the reason in the alert.
-7. After approval, the source assignment contains the target agent and the target assignment contains the requester.
+7. After approval, every stored assignment in the source block contains the target agent, and every stored assignment in the target block contains the requester.
 
 ### Add Demand Forecasts
 
@@ -292,7 +292,9 @@ Use ISO datetimes for `slot_start` and `slot_end`, for example `2026-05-10T09:00
 
 New generated schedules are marked `active`. Personal dashboards, View All My Shifts, Admin Summary coverage, and demand-day coverage use active schedules only. If a schedule is later marked `cancelled` or `archived` in Firestore, it is retained as history but ignored by those views. When multiple active schedules cover the same slot, the newest active schedule is authoritative for that slot.
 
-The scheduler respects agent availability windows and evaluates them in the agent's office local timezone, so a Monday 09:00-17:00 window means 09:00-17:00 at that agent's office. Agents with no availability windows are treated as always available.
+The scheduler assigns agents only to demand for their own home office. It also respects agent availability windows and evaluates them in the agent's office local timezone, so a Monday 09:00-17:00 window means 09:00-17:00 at that agent's office. Agents with no availability windows are treated as always available.
+
+If older generated schedules were created before the same-office constraint, they may still contain invalid cross-office assignments. Archive/cancel those schedules in Firestore or generate a fresh active schedule after this fix. The app does not silently rewrite historical generated schedules.
 
 Note: the manual schedule generation Start and End controls display in the admin browser's local timezone and are sent to the backend as UTC. The Office-local helper converts the selected office date/week into the correct UTC window first, then displays that equivalent window in the browser-local controls.
 
@@ -310,6 +312,7 @@ Note: the manual schedule generation Start and End controls display in the admin
 | App returns to login while you are using it | Session expired, user profile was deleted, or user was disabled | Log in again; if it repeats, ask an admin to verify your Firestore user profile is active |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |
 | Agent shifts disappear after updating schedule visibility code | Older `generated_schedules` documents may not have `status: active` | Mark the intended visible schedules `active`, archive/cancel old schedules, or generate a fresh schedule |
+| Agent shifts show multiple offices in one day | An old generated schedule was created before same-office scheduling was enforced | Archive/cancel the affected generated schedule or regenerate a fresh active schedule after the fix |
 | Shift-swap approval is refused | The request is stale or would break schedule integrity | Refresh Shift-Swap Requests and review the alert; the backend refuses swaps with skill mismatch, office mismatch, availability conflicts, duplicate assignment, or overlapping assignment |
 | Office save says timezone is invalid | The office timezone is not a real IANA timezone name | Use a value like `Europe/Berlin`, `Europe/London`, or `UTC` |
 | Every timezone is rejected as invalid | The backend virtual environment is missing the `tzdata` package on Windows | Activate `backend\\.venv` and run `pip install -r requirements.txt`, then restart the backend |

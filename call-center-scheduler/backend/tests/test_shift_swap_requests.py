@@ -235,6 +235,44 @@ def test_options_include_current_agent_shifts_and_same_office_targets() -> None:
     assert options["target_shifts"][0]["agent_id"] == "agent-2"
 
 
+def test_options_merge_adjacent_slots_into_one_shift_block() -> None:
+    schedule = {
+        "id": "schedule-1",
+        "status": "active",
+        "generated_at": "2026-07-09T10:00:00+00:00",
+        "assignments": [
+            _assignment(9, "skill-a", ["agent-1"]),
+            _assignment(10, "skill-b", ["agent-1"]),
+        ],
+    }
+
+    options = _service(schedules=[schedule]).options_for_agent(_current_user("user-1"))
+
+    assert len(options["my_shifts"]) == 1
+    block = options["my_shifts"][0]
+    assert block["slot_start"] == _dt(9)
+    assert block["slot_end"] == _dt(11)
+    assert len(block["assignment_refs"]) == 2
+    assert block["skill_name"] == "Multiple skills: Skill A, Skill B"
+
+
+def test_options_keep_gapped_slots_as_separate_shift_blocks() -> None:
+    schedule = {
+        "id": "schedule-1",
+        "status": "active",
+        "generated_at": "2026-07-09T10:00:00+00:00",
+        "assignments": [
+            _assignment(9, "skill-a", ["agent-1"]),
+            _assignment(11, "skill-a", ["agent-1"]),
+        ],
+    }
+
+    options = _service(schedules=[schedule]).options_for_agent(_current_user("user-1"))
+
+    assert len(options["my_shifts"]) == 2
+    assert [block["slot_start"] for block in options["my_shifts"]] == [_dt(9), _dt(11)]
+
+
 def test_agent_can_create_valid_shift_swap_request() -> None:
     created = _service().create_for_agent(_current_user("user-1"), _valid_payload())
 
@@ -371,6 +409,52 @@ def test_approval_applies_swap_to_schedule_assignments() -> None:
     assert source["assigned_agent_ids"] == ["agent-2"]
     assert target["assigned_agent_ids"] == ["agent-1"]
     assert reviewed["schedule_update"]["applied"] is True
+
+
+def test_approval_applies_swap_to_all_assignments_in_shift_blocks() -> None:
+    schedule = {
+        "id": "schedule-1",
+        "status": "active",
+        "generated_at": "2026-07-09T10:00:00+00:00",
+        "assignments": [
+            _assignment(9, "skill-a", ["agent-1"]),
+            _assignment(10, "skill-b", ["agent-1"]),
+            _assignment(12, "skill-a", ["agent-2"]),
+            _assignment(13, "skill-b", ["agent-2"]),
+        ],
+    }
+    service = _service(schedules=[schedule])
+    options = service.options_for_agent(_current_user("user-1"))
+    source = options["my_shifts"][0]
+    target = options["target_shifts"][0]
+
+    created = service.create_for_agent(
+        _current_user("user-1"),
+        ShiftSwapRequestCreate(
+            source_schedule_id=source["schedule_id"],
+            source_assignment_key=source["assignment_key"],
+            source_assignment_refs=source["assignment_refs"],
+            target_schedule_id=target["schedule_id"],
+            target_assignment_key=target["assignment_key"],
+            target_assignment_refs=target["assignment_refs"],
+            target_agent_id=target["agent_id"],
+        ),
+    )
+    reviewed = service.review(
+        created["id"],
+        ShiftSwapRequestReview(status=ShiftSwapRequestStatus.APPROVED),
+        _current_user("admin-1", "admin"),
+    )
+
+    assignments = service.schedules_repo.rows[0]["assignments"]
+    assert [assignment["assigned_agent_ids"] for assignment in assignments] == [
+        ["agent-2"],
+        ["agent-2"],
+        ["agent-1"],
+        ["agent-1"],
+    ]
+    assert reviewed["schedule_update"]["source_assignment_count"] == 2
+    assert reviewed["schedule_update"]["target_assignment_count"] == 2
 
 
 def test_copy_assignment_rejects_duplicate_agent() -> None:

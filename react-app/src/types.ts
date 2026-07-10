@@ -91,17 +91,26 @@ export interface DayOffRequest {
 
 export type ShiftSwapRequestStatus = "pending" | "approved" | "rejected" | string;
 
+export interface ShiftSwapAssignmentRef {
+  schedule_id: string;
+  assignment_key: string;
+}
+
 export interface ShiftSwapOption {
   schedule_id: string;
   assignment_key: string;
+  assignment_refs?: ShiftSwapAssignmentRef[];
   agent_id: string;
   agent_name: string;
   slot_start: string;
   slot_end: string;
   office_id: string;
   office_name: string;
+  office_timezone?: string | null;
   skill_id: string;
   skill_name: string;
+  skill_ids?: string[];
+  skill_names?: string[];
 }
 
 export interface ShiftSwapOptionsResponse {
@@ -122,6 +131,8 @@ export interface ShiftSwapRequest {
   source_assignment_key: string;
   target_schedule_id: string;
   target_assignment_key: string;
+  source_assignment_refs?: ShiftSwapAssignmentRef[] | null;
+  target_assignment_refs?: ShiftSwapAssignmentRef[] | null;
   source_shift: ShiftSwapOption;
   target_shift: ShiftSwapOption;
   reason?: string | null;

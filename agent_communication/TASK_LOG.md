@@ -3,6 +3,33 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: SCHED-004 (QA)
+- Timestamp: 2026-07-10
+- Current state: QA complete at the code/tests/data level. Verdict: APPROVED WITH FINDINGS — the implementation is correct and well-tested, but live-data quantification shows the documented RISK-012 remediation is MANDATORY (see finding 1), and the authenticated browser smoke is BLOCKED (Chrome extension disconnected).
+- Verification results (per QA item, with evidence):
+  1. Same-office scheduling: CONFIRMED — `SchedulerService._rank_eligible_agents` skips any agent whose `office_id` differs from the demand office (`scheduler_service.py`, new `demand_office_id` parameter, check placed before all other eligibility checks); pinned by both tests in `test_scheduler_office_constraint.py`.
+  2. Existing checks intact: CONFIRMED — the constraint is an additional skip; skill/availability/rest/weekly-hours/active-agent checks are untouched and their ordering preserved; full suite green including the updated `test_scheduler_availability.py`.
+  3. Swap options are whole blocks: CONFIRMED — `options_for_agent` now builds from `_build_shift_blocks`; the React panel consumes block options with `assignment_refs` arrays; raw 30-minute rows no longer surface.
+  4. Merge semantics: CONFIRMED — blocks merge on same agent + same office + same OFFICE-LOCAL date + exact adjacency (`slot_end == slot_start`, UTC-normalized); mixed-skill continuous runs merge into one block labeled "Multiple skills: ..." with per-slot skill validation retained; pinned by `test_options_merge_adjacent_slots_into_one_shift_block`.
+  5. Gaps split blocks: CONFIRMED — adjacency equality fails across gaps; pinned by `test_options_keep_gapped_slots_as_separate_shift_blocks`.
+  6. Approval applies to EVERY stored assignment in both blocks: CONFIRMED — `_apply_approved_swap` builds `(schedule_id, assignment_key)` sets for both blocks and rewrites each affected schedule in ONE update covering all its block assignments; pinned by `test_approval_applies_swap_to_all_assignments_in_shift_blocks`. Validation re-runs per slot at approval (ownership, skills both directions with min-proficiency, availability office-local per D-20260708-009, overlap checks with whole-block exception sets, pairwise source/target overlap). Backward compatible: legacy single-slot pending requests review via the `_request_assignment_refs` fallback. NEW stricter rule: both agents must BELONG to the shift office (consistent with the scheduler constraint).
+  7. Office-local time display: CONFIRMED — options/snapshots carry `office_timezone`; the React formatters render shift times via `Intl.DateTimeFormat` with that zone.
+  8. Legacy cross-office schedules documented: CONFIRMED — decision D-20260710-001, RISK-012 (High/Open), backlog item 22 (archive/cancel maintenance control), USER_MANUAL note + troubleshooting row.
+- Findings (ordered by severity):
+  1. HIGH (live data, quantified — makes RISK-012 remediation mandatory): both currently ACTIVE schedules predate SCHED-004 and are mostly cross-office. Measured directly against agent home offices: schedule `bglxododpbsami2VYyCp` has 2724 of 3840 assigned slots cross-office (71%); `rNBXv3DUY9qpQo2G8pyK` has 1544 of 2115 (73%). Consequences today: agent dashboards and swap options are full of invalid cross-office shifts, and the new "both agents must belong to the shift office" rule will 409 most swap attempts against them. Remediation is NOT optional: (a) mark both legacy schedules `cancelled` (manual Firestore status edit or a small script — no admin control exists yet, which raises backlog item 22's priority), then (b) generate a fresh schedule under the new constraint. Regenerating WITHOUT cancelling is insufficient — newest-wins only overrides overlapping slots, so old cross-office assignments outside the new window would keep leaking into dashboards.
+  2. Medium — Authenticated browser smoke (agent + admin) BLOCKED: the Chrome extension is disconnected. Code and tests cover the logic; still pending live: the block UI rendering, office-local time display in the browser, and one real block-swap approve. Should be combined with the post-remediation smoke after finding 1 is executed.
+  3. Info — SCHED-003 (atomic `db.batch()` swap application) remains pending; block swaps can now touch MORE assignments per approval, mildly widening the non-transactional exposure. Reinforces doing SCHED-003 before production use (RISK-011 unchanged).
+  4. Info — Whole-block swaps require the counterpart agent to hold EVERY skill in a multi-skill block; correct by design and labeled in the UI, but expect "why can't I swap this" questions — the 409 details name the exact failing skill direction, which helps.
+- Commands run:
+  - `python -m pytest backend/tests` -> 92 passed
+  - `npm run build` -> passed; `npm test` -> 7 passed
+  - Live Firestore reads (quota-minimal): active-schedule count/list + cross-office quantification scan (agents list + 2 schedule docs)
+- Approval/blocker status: APPROVED (code) — no code blockers. OPERATIONAL GATE before the feature is usable/observable: execute finding 1 (cancel legacy actives + regenerate), then run the browser smoke.
+- Recommended next step: Codex commits SCHED-004 scoped and provides the legacy-schedule cancel step (script or documented console edit, per backlog 22); user reconnects Chrome, cancels/regenerates, then QA (or user) runs the live agent+admin block-swap smoke.
+
+## Status Update
 - Agent: Codex
 - Role: Driver
 - Task ID: FEAT-008 closeout
@@ -1755,3 +1782,43 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
   - `agent_communication/TASK_LOG.md`
 - Commands/tests run: Documentation-only change; no application tests required.
 - Next step: Use the reference as presentation source material, or request a shorter slide-oriented version.
+
+## Status Update
+- Agent: Codex
+- Task ID: SCHED-004
+- Timestamp: 2026-07-10 08:28 +02:00
+- Current state: Done; ready for QA review.
+- Completed:
+  - Updated scheduler eligibility so agents can only be assigned to demand from their home office.
+  - Added backend schedule-generation regressions for cross-office demand and same-office assignment.
+  - Changed shift-swap options to return continuous daily shift blocks built from adjacent same-agent, same-office, same-local-date assignments.
+  - Changed shift-swap creation/review to preserve and apply all underlying assignment refs in the selected source/target blocks.
+  - Updated React shift-swap selection to submit block refs and display block times in office-local timezone.
+  - Documented that old cross-office generated schedules should be archived/cancelled or regenerated, not silently mutated.
+- In progress: None.
+- Blockers: None.
+- Files touched:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `call-center-scheduler/backend/app/models/shift_swap_request.py`
+  - `call-center-scheduler/backend/app/services/scheduler_service.py`
+  - `call-center-scheduler/backend/app/services/shift_swap_request_service.py`
+  - `call-center-scheduler/backend/tests/test_scheduler_availability.py`
+  - `call-center-scheduler/backend/tests/test_scheduler_office_constraint.py`
+  - `call-center-scheduler/backend/tests/test_shift_swap_requests.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/pages/DashboardPage.tsx`
+  - `react-app/src/types.ts`
+- Commands/tests run:
+  - `python -m py_compile backend\app\services\scheduler_service.py backend\app\services\shift_swap_request_service.py backend\app\models\shift_swap_request.py` -> passed
+  - `python -m pytest backend\tests\test_scheduler_availability.py backend\tests\test_scheduler_office_constraint.py backend\tests\test_shift_swap_requests.py` -> 35 passed
+  - `python -m pytest backend\tests` -> 92 passed
+  - `npm test -- --run` from `react-app` -> 7 passed; Vite printed existing esbuild/oxc deprecation warnings
+  - `npm run build` from `react-app` -> passed; Vite reported the existing large chunk warning
+  - Restarted backend from the backend virtual environment after detecting the prior port 8000 process was not running with `--reload`; `GET /api/health` -> 200.
+  - Authenticated browser smoke with demo agent Anna Weber: Shift-swap dropdown now shows whole blocks such as `06/07/2026, 12:00 - 15:30 | IDnow Munich HQ | Document Verification`; the selected option payload includes 7 underlying `assignment_refs`, proving the UI no longer exposes each 30-minute stored slot as the primary choice.
+  - Live data caveat: the same old active generated schedule also exposes a separate Anna Weber Berlin block, confirming pre-SCHED-004 cross-office schedules still need archive/cancel/regeneration.
+- Manual cleanup step:
+  - Archive/cancel or regenerate any existing active `generated_schedules` documents that contain cross-office assignments created before SCHED-004.
+- Next step: QA review should confirm fresh schedules generated after SCHED-004 no longer assign agents outside their home office, then archive/cancel/regenerate old invalid active schedules.
