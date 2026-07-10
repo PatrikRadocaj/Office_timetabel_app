@@ -31,8 +31,10 @@ class _ScheduleRepository:
 
     def list_active(self, order_by: str | None = None, limit: int | None = None) -> list[dict]:
         self.list_called = True
-        assert order_by == "-generated_at"
-        assert limit == 5
+        # Week generation shards one document per day, so the summary must read
+        # ALL active schedules — a newest-N cutoff would drop days of coverage.
+        assert order_by == "generated_at"
+        assert limit is None
         return [
             {
                 "id": "schedule-1",

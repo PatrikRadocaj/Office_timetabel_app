@@ -31,7 +31,10 @@ class DashboardService:
         self.schedules_repo = SchedulesRepository()
 
     def summary(self, start_at: datetime | None = None, end_at: datetime | None = None) -> dict[str, Any]:
-        schedules = list(reversed(self.schedules_repo.list_active(order_by="-generated_at", limit=5)))
+        # Read ALL active schedules: week generation persists one shard document
+        # per day (7+ docs per week), so a fixed newest-N cutoff would drop days.
+        # Actives are bounded by per-week archiving, keeping this scan small.
+        schedules = self.schedules_repo.list_active(order_by="generated_at")
         coverage_points: list[dict[str, Any]] = []
 
         start_utc = _as_utc(start_at) if start_at else None

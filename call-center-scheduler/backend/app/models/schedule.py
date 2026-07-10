@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ScheduleGenerationRequest(BaseModel):
     start_at: datetime
     end_at: datetime
+
+
+class ScheduleWeekGenerationRequest(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    week: int = Field(ge=1, le=53)
+
+    @model_validator(mode="after")
+    def validate_iso_week(self) -> "ScheduleWeekGenerationRequest":
+        try:
+            date.fromisocalendar(self.year, self.week, 1)
+        except ValueError as exc:
+            raise ValueError(f"{self.year} does not have ISO week {self.week}") from exc
+        return self
 
 
 class SlotAssignment(BaseModel):
@@ -29,6 +42,19 @@ class ScheduleGenerationResponse(BaseModel):
     total_required: int
     total_assigned: int
     uncovered_demand: int
+
+
+class ScheduleWeekGenerationResponse(ScheduleGenerationResponse):
+    year: int
+    week: int
+    week_start: datetime | str
+    week_end: datetime | str
+    archived_schedule_ids: list[str] = Field(default_factory=list)
+    # Week output is persisted as one Firestore document per UTC day so a full
+    # ISO week stays under the 1 MiB per-document limit. `schedule_id` carries
+    # the shared generation batch id; `schedule_ids` lists the shard documents.
+    schedule_ids: list[str] = Field(default_factory=list)
+    document_count: int = 1
 
 
 class CoveragePoint(BaseModel):

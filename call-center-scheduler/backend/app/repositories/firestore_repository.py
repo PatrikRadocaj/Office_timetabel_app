@@ -71,7 +71,12 @@ class FirestoreRepository:
         message = str(exc)
         lowered = message.lower()
 
-        if "quota exceeded" in lowered or isinstance(exc, google_api_exceptions.ResourceExhausted):
+        if "maximum allowed size" in lowered or "longer than 1048487" in lowered:
+            detail = (
+                "A document write exceeds Firestore's 1 MiB size limit. "
+                "Reduce the generation scope or report this as a size regression."
+            )
+        elif "quota exceeded" in lowered or isinstance(exc, google_api_exceptions.ResourceExhausted):
             detail = (
                 "Cloud Firestore quota is exceeded for the configured project. "
                 "Wait for quota reset, reduce Firestore usage, or increase the project quota."

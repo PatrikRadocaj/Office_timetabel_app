@@ -26,9 +26,9 @@ class FakeSchedulesRepository:
     def __init__(self) -> None:
         self.created: dict[str, Any] | None = None
 
-    def create(self, data: dict[str, Any]) -> dict[str, Any]:
+    def create(self, data: dict[str, Any], document_id: str | None = None) -> dict[str, Any]:
         self.created = data
-        return {"id": "schedule-1", **data}
+        return {"id": document_id or "schedule-1", **data}
 
 
 def _agent(agent_id: str, office_id: str) -> dict[str, Any]:

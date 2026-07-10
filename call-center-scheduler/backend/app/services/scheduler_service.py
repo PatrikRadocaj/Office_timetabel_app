@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 from app.core.timezones import resolve_office_timezone
-from app.models.schedule import ScheduleGenerationRequest
 from app.models.common import utcnow
+from app.models.schedule import ScheduleGenerationRequest, ScheduleWeekGenerationRequest
 from app.repositories.agents_repository import AgentsRepository
 from app.repositories.offices_repository import OfficesRepository
 from app.repositories.schedules_repository import ACTIVE_SCHEDULE_STATUS, SchedulesRepository
@@ -45,7 +46,95 @@ class SchedulerService:
         if payload.end_at <= payload.start_at:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_at must be after start_at")
 
-        demand_rows = self._load_demand(payload.start_at, payload.end_at)
+        assignments, total_required, total_assigned = self._compute_assignments(payload.start_at, payload.end_at)
+        schedule_doc = self.schedule_repo.create(
+            self._schedule_document(
+                start_at=payload.start_at,
+                end_at=payload.end_at,
+                assignments=assignments,
+                metadata={},
+            ),
+            document_id=None,
+        )
+        return {
+            "schedule_id": schedule_doc["id"],
+            "assignments": assignments,
+            "total_required": total_required,
+            "total_assigned": total_assigned,
+            "uncovered_demand": max(0, total_required - total_assigned),
+        }
+
+    def generate_week(self, payload: ScheduleWeekGenerationRequest) -> dict[str, Any]:
+        week_start, week_end = self.iso_week_range(payload.year, payload.week)
+        assignments, total_required, total_assigned = self._compute_assignments(week_start, week_end)
+
+        # A full ISO week at production demand exceeds Firestore's 1 MiB document
+        # limit, so the week persists as one shard document per UTC day. Every
+        # reader (dashboards, me-service, day-view coverage, swaps) consumes
+        # schedules via list_active with newest-wins per-slot dedup, so multiple
+        # active documents for one week are already handled.
+        batch_id = f"schedule_{payload.year}_W{payload.week:02d}_{uuid4().hex[:8]}"
+        week_metadata = {
+            "year": payload.year,
+            "week": payload.week,
+            "week_start": week_start,
+            "week_end": week_end,
+            "generation_scope": "iso_week",
+            "generation_batch_id": batch_id,
+        }
+
+        # Persist the new shards FIRST; only archive the previous actives once
+        # every shard is stored. A persist failure therefore leaves the previous
+        # schedules untouched, while an archive failure merely leaves duplicate
+        # actives, which newest-wins already tolerates.
+        created_ids: list[str] = []
+        for day_index, (day_start, day_end, day_assignments) in enumerate(
+            self._split_assignments_by_utc_day(assignments, week_start, week_end)
+        ):
+            shard_doc = self.schedule_repo.create(
+                self._schedule_document(
+                    start_at=day_start,
+                    end_at=day_end,
+                    assignments=day_assignments,
+                    metadata={**week_metadata, "day_index": day_index},
+                ),
+                document_id=f"{batch_id}_d{day_index}",
+            )
+            created_ids.append(str(shard_doc["id"]))
+
+        archived_schedule_ids = self.schedule_repo.archive_active_for_week(
+            payload.year, payload.week, exclude_ids=created_ids
+        )
+
+        return {
+            "schedule_id": batch_id,
+            "schedule_ids": created_ids,
+            "document_count": len(created_ids),
+            "assignments": assignments,
+            "total_required": total_required,
+            "total_assigned": total_assigned,
+            "uncovered_demand": max(0, total_required - total_assigned),
+            "year": payload.year,
+            "week": payload.week,
+            "week_start": week_start,
+            "week_end": week_end,
+            "archived_schedule_ids": archived_schedule_ids,
+        }
+
+    @staticmethod
+    def iso_week_range(year: int, week: int) -> tuple[datetime, datetime]:
+        try:
+            start_date = date.fromisocalendar(int(year), int(week), 1)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{year} does not have ISO week {week}",
+            ) from exc
+        start = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+        return start, start + timedelta(days=7)
+
+    def _compute_assignments(self, start_at: datetime, end_at: datetime) -> tuple[list[dict[str, Any]], int, int]:
+        demand_rows = self._load_demand(start_at, end_at)
         agents = [agent for agent in self.agent_repo.list() if agent.get("is_active", True)]
         offices = {office["id"]: office for office in self.office_repo.list()}
         skills = {skill["id"]: skill for skill in self.skill_repo.list()}
@@ -55,9 +144,6 @@ class SchedulerService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No demand rows for selected window")
         if not agents:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active agents available")
-
-        slot_minutes = self.settings.schedule_slot_minutes
-        slot_hours = slot_minutes / 60.0
 
         agent_state: dict[str, dict[str, Any]] = {
             agent["id"]: {
@@ -82,6 +168,7 @@ class SchedulerService:
                 required = int(demand["required_agents"])
                 slot_start = _as_utc(demand["slot_start"])
                 slot_end = _as_utc(demand["slot_end"])
+                slot_hours = (slot_end - slot_start).total_seconds() / 3600.0
 
                 capacity = int(offices.get(office_id, {}).get("max_capacity", 0))
                 remaining_capacity = max(0, capacity - office_usage[office_id])
@@ -135,32 +222,53 @@ class SchedulerService:
 
         total_required = sum(item["required_agents"] for item in assignments)
         total_assigned = sum(len(item["assigned_agent_ids"]) for item in assignments)
+        return assignments, total_required, total_assigned
 
-        schedule_doc = self.schedule_repo.create(
-            {
-                "start_at": _as_utc(payload.start_at),
-                "end_at": _as_utc(payload.end_at),
-                "generated_at": utcnow(),
-                "status": ACTIVE_SCHEDULE_STATUS,
-                "algorithm": "greedy-skill-coverage-v1",
-                "slot_minutes": slot_minutes,
-                "assignments": assignments,
-                "metrics": {
-                    "total_required": total_required,
-                    "total_assigned": total_assigned,
-                    "coverage_pct": round((total_assigned / total_required * 100.0), 2) if total_required else 100.0,
-                    "uncovered_demand": max(0, total_required - total_assigned),
-                },
-            }
-        )
-
+    def _schedule_document(
+        self,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        assignments: list[dict[str, Any]],
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        total_required = sum(item["required_agents"] for item in assignments)
+        total_assigned = sum(len(item["assigned_agent_ids"]) for item in assignments)
         return {
-            "schedule_id": schedule_doc["id"],
+            "start_at": _as_utc(start_at),
+            "end_at": _as_utc(end_at),
+            "generated_at": utcnow(),
+            "status": ACTIVE_SCHEDULE_STATUS,
+            "algorithm": "greedy-balanced-weekly-capacity-v2",
+            "slot_minutes": self.settings.schedule_slot_minutes,
+            **metadata,
             "assignments": assignments,
-            "total_required": total_required,
-            "total_assigned": total_assigned,
-            "uncovered_demand": max(0, total_required - total_assigned),
+            "metrics": {
+                "total_required": total_required,
+                "total_assigned": total_assigned,
+                "coverage_pct": round((total_assigned / total_required * 100.0), 2) if total_required else 100.0,
+                "uncovered_demand": max(0, total_required - total_assigned),
+            },
         }
+
+    @staticmethod
+    def _split_assignments_by_utc_day(
+        assignments: list[dict[str, Any]],
+        window_start: datetime,
+        window_end: datetime,
+    ) -> list[tuple[datetime, datetime, list[dict[str, Any]]]]:
+        """Group assignments into per-UTC-day shards, keeping in-day order."""
+
+        by_day: dict[date, list[dict[str, Any]]] = defaultdict(list)
+        for assignment in assignments:
+            by_day[_as_utc(assignment["slot_start"]).date()].append(assignment)
+
+        shards: list[tuple[datetime, datetime, list[dict[str, Any]]]] = []
+        for day in sorted(by_day.keys()):
+            day_start = max(datetime.combine(day, time.min, tzinfo=timezone.utc), _as_utc(window_start))
+            day_end = min(day_start + timedelta(days=1), _as_utc(window_end))
+            shards.append((day_start, day_end, by_day[day]))
+        return shards
 
     def _load_demand(self, start_at: datetime, end_at: datetime) -> list[dict[str, Any]]:
         return self.demand_service.list(start_at=start_at, end_at=end_at)
@@ -188,7 +296,7 @@ class SchedulerService:
     ) -> list[dict[str, Any]]:
         min_proficiency = int(skills.get(skill_id, {}).get("min_proficiency", 1))
 
-        eligible: list[tuple[float, dict[str, Any]]] = []
+        eligible: list[tuple[float, str, dict[str, Any]]] = []
         for agent in agents:
             agent_id = agent["id"]
             if agent_id in used_agents_this_slot:
@@ -206,7 +314,9 @@ class SchedulerService:
                 continue
 
             state = agent_state[agent_id]
-            if state["weekly_hours"] + slot_hours > float(agent["weekly_max_hours"]):
+            weekly_max_hours = float(agent["weekly_max_hours"])
+            projected_weekly_hours = state["weekly_hours"] + slot_hours
+            if projected_weekly_hours > weekly_max_hours:
                 continue
 
             # Soft rest-period guard: if previous slot ended too recently, skip.
@@ -223,19 +333,30 @@ class SchedulerService:
             preference_score = self._shift_preference_penalty(
                 agent.get("shift_preference", "any"), slot_start.astimezone(office_tz).hour
             )
-            load_score = state["weekly_hours"]
-            score = preference_score * 100.0 + load_score
-            eligible.append((score, agent))
+            proficiency = self._agent_skill_proficiency(agent, skill_id)
+            current_load_ratio = state["weekly_hours"] / weekly_max_hours if weekly_max_hours else 1.0
+            remaining_after = max(0.0, weekly_max_hours - projected_weekly_hours)
+            score = (
+                current_load_ratio * 100.0
+                + preference_score * 10.0
+                - proficiency * 0.5
+                - remaining_after * 0.05
+            )
+            eligible.append((score, str(agent_id), agent))
 
-        eligible.sort(key=lambda item: item[0])
-        return [item[1] for item in eligible]
+        eligible.sort(key=lambda item: (item[0], item[1]))
+        return [item[2] for item in eligible]
 
     @staticmethod
     def _agent_has_skill(agent: dict[str, Any], skill_id: str, min_proficiency: int) -> bool:
+        return SchedulerService._agent_skill_proficiency(agent, skill_id) >= min_proficiency
+
+    @staticmethod
+    def _agent_skill_proficiency(agent: dict[str, Any], skill_id: str) -> int:
         for skill in agent.get("skills", []):
-            if skill.get("skill_id") == skill_id and int(skill.get("proficiency", 0)) >= min_proficiency:
-                return True
-        return False
+            if skill.get("skill_id") == skill_id:
+                return int(skill.get("proficiency", 0))
+        return 0
 
     @staticmethod
     def _agent_is_available(agent: dict[str, Any], slot_start: datetime, slot_end: datetime, office_tz: tzinfo) -> bool:

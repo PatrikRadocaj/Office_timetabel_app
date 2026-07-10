@@ -212,6 +212,13 @@ export interface ScheduleAssignment {
 
 export interface ScheduleGenerationResponse {
   schedule_id: string;
+  year?: number;
+  week?: number;
+  week_start?: string;
+  week_end?: string;
+  archived_schedule_ids?: string[];
+  schedule_ids?: string[];
+  document_count?: number;
   assignments: ScheduleAssignment[];
   total_required: number;
   total_assigned: number;

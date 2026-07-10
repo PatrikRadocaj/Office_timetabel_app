@@ -284,19 +284,22 @@ Use ISO datetimes for `slot_start` and `slot_end`, for example `2026-05-10T09:00
 
 1. Ensure offices, skills, agents, and demand forecasts exist.
 2. Open the schedule generation section.
-3. Prefer the Office-local helper: choose an office, choose the office local date, then click Use Day or Use Week. This sets the generation window from midnight in that office's timezone.
-4. If needed, adjust the Start and End date/time fields manually.
-5. Generate the schedule.
-6. Review the schedule ID, total required agents, total assigned agents, uncovered demand, and assignment rows.
-7. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
+3. Enter the ISO year and KW / ISO week number.
+4. Generate the schedule.
+5. Review the schedule ID, KW, week range, total required agents, total assigned agents, uncovered demand, archived previous count, and assignment rows.
+6. Use the Admin Summary section to review active schedules plus aggregate required, assigned, gap, and coverage values.
 
-New generated schedules are marked `active`. Personal dashboards, View All My Shifts, Admin Summary coverage, and demand-day coverage use active schedules only. If a schedule is later marked `cancelled` or `archived` in Firestore, it is retained as history but ignored by those views. When multiple active schedules cover the same slot, the newest active schedule is authoritative for that slot.
+Schedule generation covers the full ISO week from Monday 00:00 UTC through the next Monday 00:00 UTC. Invalid week numbers, such as week 53 in a year that has only 52 ISO weeks, are rejected by the backend. Because the window uses UTC boundaries while demand days are office-local, the first one or two local Monday-morning hours of a European office belong to the previous UTC week window — that boundary demand is covered when the adjacent KW is generated, so it is not data loss.
+
+A KW generation is stored as one schedule document per day of the week (up to 7 documents sharing one generation batch id) so that large weeks fit Firestore's 1 MiB per-document limit. The success message reports the document count; dashboards, shift lists, and coverage views combine the documents automatically.
+
+New generated schedules are marked `active`. Personal dashboards, View All My Shifts, Admin Summary coverage, and demand-day coverage use active schedules only. If a schedule is later marked `cancelled` or `archived` in Firestore, it is retained as history but ignored by those views. Generating the same year/KW first stores the new schedule documents and then archives the previous active schedules for that same year/KW — so a failed generation never removes the existing schedule. When multiple active schedules still cover the same slot, the newest active schedule is authoritative for that slot.
 
 The scheduler assigns agents only to demand for their own home office. It also respects agent availability windows and evaluates them in the agent's office local timezone, so a Monday 09:00-17:00 window means 09:00-17:00 at that agent's office. Agents with no availability windows are treated as always available.
 
 If older generated schedules were created before the same-office constraint, they may still contain invalid cross-office assignments. Archive/cancel those schedules in Firestore or generate a fresh active schedule after this fix. The app does not silently rewrite historical generated schedules.
 
-Note: the manual schedule generation Start and End controls display in the admin browser's local timezone and are sent to the backend as UTC. The Office-local helper converts the selected office date/week into the correct UTC window first, then displays that equivalent window in the browser-local controls.
+Older generated schedules created before year/KW generation may not have `year`, `week`, `week_start`, or `week_end` fields. The app does not silently rewrite those historical schedules. Archive/cancel old arbitrary-window schedules or regenerate the intended KW schedules if they should be replaced.
 
 ## Troubleshooting
 
@@ -308,6 +311,7 @@ Note: the manual schedule generation Start and End controls display in the admin
 | FastAPI serves HTML but built assets return 404 | Backend started before `npm run build`; `/assets` is mounted only at startup | Run `npm run build`, then restart the backend |
 | Firebase errors | Missing or invalid `.env`/service account | Check Firebase project ID, API key, and service account path or `FIREBASE_SERVICE_ACCOUNT_JSON` |
 | Cloud Firestore quota is exceeded | Firestore rejected reads/writes for the configured project | Wait for quota reset, reduce repeated admin/API refreshes, or increase the Firebase/Google Cloud quota |
+| A document write exceeds Firestore's 1 MiB size limit | A single stored document grew past Firestore's hard limit (e.g. one schedule day with extremely dense assignments) | Report it as a size regression; KW schedules are already stored per day, so this indicates unusually dense demand or a bug |
 | Login fails for seeded users | Seeded `users` docs are profiles only | Create matching Firebase Auth users or register through the app |
 | App returns to login while you are using it | Session expired, user profile was deleted, or user was disabled | Log in again; if it repeats, ask an admin to verify your Firestore user profile is active |
 | Admin page forbidden | User role is not `admin` in Firestore | Update the user's Firestore profile role |

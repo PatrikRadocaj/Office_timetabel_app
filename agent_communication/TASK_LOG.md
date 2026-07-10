@@ -4,6 +4,96 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
 
 ## Status Update
 - Agent: Claude
+- Role: Driver (SCHED-005 closeout — user handed the Driver prompt to Claude; Codex may review)
+- Task ID: SCHED-005 closeout (unblock + findings + commit)
+- Timestamp: 2026-07-10
+- Current state: Complete. The 1 MiB persistence blocker is fixed via per-UTC-day shard documents, QA finding 1 (create-before-archive) is applied, QA finding 2 (ISO default) was verified as already fixed in the worktree, docs updated, suite green, committed.
+- IMPORTANT scope note: the Driver prompt I received predated the live-smoke FAILURE entry (document-size blocker) and asked only for findings 1-2 + commit. Committing that way would have shipped a feature that cannot persist a realistic week, so per the blocker entry's fix direction (a) I implemented sharded persistence in the same closeout.
+- Completed:
+  - Sharded week persistence: `generate_week` now splits the computed week into one shard document per UTC day (`{batch}_d0..d6`), each carrying `year`/`week`/`week_start`/`week_end`/`generation_scope`/`generation_batch_id`/`day_index`, per-shard metrics, and day-bounded `start_at`/`end_at`. The response aggregates the full week and adds `schedule_ids` + `document_count` (`schedule_id` now carries the batch id). Legacy `POST /schedules/generate` remains single-document.
+  - QA finding 1 (create-before-archive): all shards are created FIRST; `archive_active_for_week(year, week, exclude_ids=...)` runs only after every shard persists, excluding the new ids. A persist failure now leaves previous actives untouched (`archived_previous_schedule_ids` is no longer stored on the doc; archived ids are response-only).
+  - QA finding 2 (ISO default): VERIFIED ALREADY FIXED in the worktree — `getIsoWeekInfo` is the standard Thursday-based algorithm; validated against 8 edge dates incl. Jan 1 2027 -> 2026-W53 (all OK). No change needed.
+  - Dashboard last-5 fix (blocker caveat): `DashboardService.summary` now reads ALL active schedules (bounded by per-week archiving) instead of the newest five, which would have dropped shard days.
+  - Explicit size-limit error mapping (blocker direction c): `_wrap_firestore_error` now detects Firestore document/property size errors and reports "A document write exceeds Firestore's 1 MiB size limit" instead of the generic unavailable message.
+  - Frontend: response type gains optional `schedule_ids`/`document_count`; the KW success alert appends "(N documents)".
+  - Docs: D-20260710-003 (sharded persistence + create-before-archive + summary/all-actives + size error), D-20260710-004 (explicit `greedy-balanced-weekly-capacity-v2` scoring note — affects ALL generation), D-20260710-002 amended for the archive ordering, SCHED-005 task row updated; USER_MANUAL adds the UTC-week vs office-local Monday boundary note (QA finding 4), the multi-document storage note, the safer archive ordering, and a 1 MiB troubleshooting row.
+- Verification evidence (key result): in-process dry run against the REAL seeded demand with capture-only persistence (no Firestore writes): the same KW 2026-W28 that failed at ~2,820,102 bytes now produces 7 shards of 318,881-461,919 bytes (30-44% of the 1 MiB limit), totals identical to the QA dry run (10,839 assignments; 29,147 required / 11,435 assigned) — persistence changed, generation math untouched.
+- Files touched:
+  - `call-center-scheduler/backend/app/services/scheduler_service.py` (compute/persist split, sharding, create-before-archive)
+  - `call-center-scheduler/backend/app/repositories/schedules_repository.py` (`archive_active_for_week` exclude_ids)
+  - `call-center-scheduler/backend/app/repositories/firestore_repository.py` (1 MiB error mapping)
+  - `call-center-scheduler/backend/app/services/dashboard_service.py` (summary reads all actives)
+  - `call-center-scheduler/backend/app/models/schedule.py` (`schedule_ids`, `document_count`)
+  - `call-center-scheduler/backend/tests/test_scheduler_week_generation.py` (shard split, create-before-archive order, persist-failure, updated metadata assertions)
+  - `call-center-scheduler/backend/tests/test_dashboard_summary_counts.py` (pins all-actives read)
+  - `react-app/src/types.ts`, `react-app/src/pages/AdminPage.tsx` (response fields, document-count message)
+  - `agent_communication/PROJECT_DOCS.md`, `agent_communication/USER_MANUAL.md`, `agent_communication/TASK_LOG.md`
+  - Plus the pre-existing SCHED-005 worktree changes (router, README, office-constraint test signatures, Year/KW UI) included in the same scoped commit.
+- Commands/tests run:
+  - `python -m pytest backend/tests` -> 101 passed (was 98; +3 new: shard split, archive ordering, persist failure)
+  - `npm run build` -> passed (pre-existing chunk-size warning only); `npm test` -> 7 passed
+  - Real-data dry run (capture-only, no writes) -> 7 shards, all under 44% of the 1 MiB limit (see evidence above)
+  - Node edge-case check of `getIsoWeekInfo` -> 8/8 OK
+- Commit hash: recorded below after commit (see next entry line) — scoped commit excludes `runtime_logs/**`, seed scripts, and `vite.config.ts`.
+- Open issues:
+  - Live KW smoke still pending (user): generate 2026/KW28 from /admin -> expect success with "(7 documents)", `archived_schedule_ids=[]` on first run, dashboards repopulate; regenerate same KW -> expect 7 archived ids. This also closes the SCHED-004/FEAT-008 live-verification chain.
+  - Coverage reality note from the dry run stands: seeded demand (29,147) far exceeds 150-agent capacity (~39% coverage) — expected, not a defect.
+  - Seed scripts remain uncommitted pending user decision; runtime logs/backups remain excluded.
+- Next step: user runs the KW28 smoke; Codex may review this closeout commit (Reviewer role open, since Claude drove it).
+
+## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: SCHED-005 (live smoke FAILURE — verdict revised to CHANGES REQUESTED)
+- Timestamp: 2026-07-10
+- Current state: The user ran the KW generation smoke from /admin and hit "Cloud Firestore is unavailable" (generic 503). Root cause identified and reproduced: THE GENERATED WEEK SCHEDULE DOCUMENT EXCEEDS FIRESTORE'S HARD 1 MiB DOCUMENT LIMIT. This supersedes the earlier same-day SCHED-005 QA verdict (below): the feature cannot persist its output for a realistic demand week, so SCHED-005 is CHANGES REQUESTED.
+- Evidence:
+  1. Server log: authenticated `POST /api/v1/schedules/generate-week` -> 503 Service Unavailable (the banner's source); a fresh single-document Firestore read succeeds, ruling out quota/credentials/network.
+  2. Dry-run reproduction (generation executed in-process with a capture-only `repo.create`, NO writes): KW 2026-W28 against the seeded demand produces 10,839 assignments, approx 2,820,102 bytes JSON — ~2.7x the 1,048,576-byte Firestore document limit. `repo.create` therefore fails with an InvalidArgument-class error that `_wrap_firestore_error` renders as the generic "Cloud Firestore is unavailable" 503.
+  3. Why past generations succeeded: they covered PARTIAL windows (1,640 and 1,424 assignments, ~650 KB — already near the limit). SCHED-005's full Monday-to-Monday week roughly triples the volume; the v2 balancer's better coverage adds more.
+  4. Secondary data point from the dry run: total_required 29,147 vs total_assigned 11,435 (~39% coverage) — seeded demand far exceeds the 150-agent capacity under weekly-max limits; not a defect, but worth knowing when reading coverage dashboards.
+  5. Incident interaction with QA finding 1 (archive-before-persist): in this failure the collection was empty, so nothing was lost — but had previous actives existed, they would now be ARCHIVED with no replacement. This failure mode is no longer hypothetical; finding 1's reorder is mandatory.
+- Root cause classification: architectural — single-document schedule storage does not scale to a full ISO week at production demand volume. The error surfacing (generic 503) also masked the real cause; an explicit size-limit message would have saved diagnosis time.
+- Fix directions for the Driver (design decision needed, in preference order):
+  a. Shard week generation into MULTIPLE schedule documents — e.g. one document per day (7 docs/week, ~400 KB each at current volume) or fixed-size assignment chunks, each carrying the same `year`/`week`/`status`/`generated_at` plus a shared `generation_batch_id`. KEY INSIGHT: existing consumers (me_service shifts/dashboard, dashboard coverage, day-view coverage, swap service) all read via `list_active` + newest-wins PER-SLOT dedup, so multiple active docs for one week are ALREADY handled correctly by every reader. Archive-by-week already filters on year/week equality and would archive all chunks. The response model can aggregate totals across chunks. CAVEAT to fix alongside: DashboardService.summary reads only the latest FIVE schedules — with 7+ docs per week that heuristic must change (e.g. read active docs for the display window instead of last-5).
+  b. Alternatively compress the stored representation (block-level assignments instead of 30-minute slots, mirroring the DATA-003 compact-demand precedent, with an expansion layer) — bigger change, touches swap assignment keys; not recommended as the immediate unblock.
+  c. In all cases: map the document-too-large error to an explicit 4xx/5xx message in `_wrap_firestore_error` ("Generated schedule exceeds Firestore document size; reduce scope or contact support") so the next size regression is diagnosable at a glance.
+- Blocker status: SCHED-005 is BLOCKED for commit until (1) week generation persists at realistic volume (fix direction a or equivalent), (2) QA finding 1's create-before-archive reorder is applied (now proven necessary), and (3) the QA finding 2 ISO-default fix lands. The rest of the earlier QA (validation, window math, weekly-max, same-office, legacy safety, tests) remains valid and approved.
+- Commands run: server log inspection; single-doc Firestore read probe (OK); in-process dry-run generation with capture-only create (no Firestore writes; ~200 reads).
+- Recommended next step: Codex implements sharded week persistence (direction a), applies findings 1-2, re-runs the suite, and the user re-runs the KW28 smoke — expected outcome: success metadata, dashboards repopulate, and the SCHED-004/FEAT-008 live verification chain finally closes.
+
+## Status Update
+- Agent: Claude
+- Role: QA Reviewer
+- Task ID: SCHED-005 (QA)
+- Timestamp: 2026-07-10
+- Current state: QA complete at the code/tests/live-route level. Verdict: APPROVED WITH FINDINGS — one Medium ordering fix recommended before commit (small reorder), one Low frontend default-week bug. The authenticated admin smoke is BLOCKED (Chrome extension disconnected) and additionally requires generating a schedule anyway, since the schedules collection is currently EMPTY (see context note).
+- Check results:
+  1. React exposes Year + KW, not Start/End: CONFIRMED — the Start/End datetime-local fields AND the TZ-001 office-local helper were removed (superseded by KW semantics); Year (2000-2100) and KW (1-53) inputs with client validation drive `POST /schedules/generate-week`.
+  2. ISO week validation: CONFIRMED — pydantic bounds plus a `date.fromisocalendar` model validator (422 for e.g. a year without W53); `iso_week_range` re-validates server-side; pinned by `test_iso_week_range_rejects_invalid_week_number`. Live: route registered and admin-guarded (401 unauthenticated; auth precedes validation so the 422 path is unit-test-verified).
+  3. Window coverage: CONFIRMED — `iso_week_range` = ISO Monday 00:00 UTC through next Monday 00:00 UTC; pinned by `test_iso_week_range_uses_full_monday_to_next_monday_utc` and the full-week load test.
+  4. Response fields: CONFIRMED — `ScheduleWeekGenerationResponse` = base totals/assignments/schedule_id + year, week, week_start, week_end, archived_schedule_ids; the same metadata (plus `generation_scope: iso_week` and the archived ids) is stored on the schedule document; deterministic doc id `schedule_{year}_W{week}_{hex}`.
+  5. Archive only after successful generation: PARTIAL — archiving correctly does NOT happen when generation FAILS (the `before_create` hook runs only after demand/agents are validated and assignments computed; pinned by `test_generate_week_does_not_archive_previous_schedule_when_generation_fails`). BUT it runs BEFORE `repo.create` persists the new schedule — see finding 1.
+  6. Weekly max across the full week: CONFIRMED — `weekly_hours` accumulates across the entire generation window (== the ISO week), with `slot_hours` now derived from each slot's actual duration instead of the configured slot size (a correctness improvement); pinned by `test_weekly_max_hours_is_respected_across_generated_week`.
+  7. Same-office scheduling retained: CONFIRMED — the SCHED-004 office check is untouched; `test_scheduler_office_constraint.py` updated only for signatures and still passes.
+  8. Legacy schedules not silently mutated: CONFIRMED — `archive_active_for_week` filters on `year`/`week` equality, so docs lacking those fields are never matched (equality-only filters: no composite-index exposure). Also verified live: zero legacy docs remain (see context note).
+- Findings (ordered by severity):
+  1. Medium — Archive-before-persist window: `before_create()` archives the previous actives immediately BEFORE `schedule_repo.create` writes the new schedule. Algorithm failures are safe (tested), but a PERSIST failure — e.g. Firestore quota exhaustion, which has genuinely occurred in this project (RISK-008) — would leave the KW with archived actives and NO replacement: empty dashboards and shift lists for that week. Recommended small reorder: create the new schedule first, then archive the previous actives, returning the archived ids in the response (and optionally patching them onto the new doc). The reverse failure mode (create succeeds, archive fails) is benign — newest-wins already tolerates duplicate actives. Add a persist-failure test alongside the existing generation-failure test.
+  2. Low — The React default Year/KW uses a naive day-of-year formula (`Math.ceil((dayOfYear+1)/7)`), not real ISO week numbering. It happens to match today (2026-W28) but diverges near year boundaries (e.g. Jan 1 2027 is ISO 2026-W53; the naive formula says 2027-W1) and for any year not starting on Monday. Because the backend accepts any VALID week, a wrong default silently generates the WRONG week rather than erroring. Fix with the standard Thursday-based ISO computation.
+  3. Info — Scoring rework shipped alongside the KW feature: eligibility ranking is now load-ratio-based with proficiency preference and a deterministic agent-id tie-break (`greedy-balanced-weekly-capacity-v2`). It is tested (`test_weekly_generation_balances_sequential_slots_across_available_agents`) and the algorithm string was bumped — but it changes assignment distribution for ALL generation, so docs/task log should call it out explicitly.
+  4. Info — UTC week boundaries vs office-local demand: Monday 00:00 UTC excludes the first 1-2 local-Monday hours for European offices (those slots belong to the adjacent UTC week window). Per spec (UTC boundaries) this is correct, and boundary demand is covered by the neighboring KW's generation — noted so nobody reads it as data loss.
+  5. Info — Stale-server incident #5: the live process predated SCHED-005 and returned 404 for `/schedules/generate-week` despite the `--reload` adoption (the running process evidently wasn't the reload one). Restarted from the worktree WITH `--reload`; the route now responds 401-guarded.
+- Context note (relevant for the smoke): the `generated_schedules` collection is currently EMPTY — the two cross-office legacy actives from the SCHED-004 QA were removed entirely during remediation (clean slate; RISK-012 data purged). Dashboards/coverage/shift views are empty until a schedule is generated.
+- Smoke recipe (blocked on Chrome/admin session; ready for the user): (a) in /admin generate Year 2026, KW 28 (the seeded demand week) -> expect success metadata with year=2026, week=28, week_start Mon 2026-07-06T00:00Z, week_end Mon 2026-07-13T00:00Z, archived_schedule_ids=[]; (b) generate the SAME KW again -> expect archived_schedule_ids=[<first id>] and exactly one active schedule for the week; (c) confirm dashboards repopulate.
+- Commands run:
+  - `python -m pytest backend/tests` -> 98 passed
+  - `npm run build` -> passed; `npm test` -> 7 passed
+  - Live probes: `/api/health` 200; `POST /schedules/generate-week` 401 unauthenticated (registered + guarded) after worktree restart; Firestore read: 0 schedule documents
+- Approval/blocker status: APPROVED WITH FINDINGS — recommend applying finding 1 (small reorder + test) and finding 2 (ISO default) WITH the SCHED-005 commit; neither blocks the design. Live smoke pending user (Chrome + one KW generation).
+- Recommended next step: Codex applies findings 1-2 and commits SCHED-005 scoped; user reconnects Chrome and runs the 3-step smoke recipe above, which simultaneously restores dashboards and completes the pending SCHED-004/FEAT-008 live verification chain.
+
+## Status Update
+- Agent: Claude
 - Role: QA Reviewer
 - Task ID: SCHED-004 (QA)
 - Timestamp: 2026-07-10
@@ -1857,3 +1947,47 @@ This file is append-only. Add new entries at the top or bottom consistently; cur
   - After the cancel completes, generate a fresh schedule from `/admin`.
   - Then rerun the authenticated agent + admin browser block-swap smoke; that closes the remaining live verification for both SCHED-004 and FEAT-008.
 - Next step: User runs the cancel script for the two legacy ids, generates a fresh schedule from `/admin`, and then repeats the authenticated agent + admin block-swap smoke.
+
+## Status Update
+- Agent: Codex
+- Task ID: SCHED-005
+- Timestamp: 2026-07-10 09:00 +02:00
+- Current state: Done; ready for QA review.
+- Completed:
+  - Added `POST /api/v1/schedules/generate-week` for ISO year/KW schedule generation.
+  - Added backend ISO week validation and full-week UTC range calculation from Monday 00:00 through the next Monday 00:00.
+  - Stored `year`, `week`, `week_start`, `week_end`, `generation_scope`, and active `status` on week-generated schedules.
+  - Chose and documented regeneration semantics: after demand/assignment calculation succeeds, the backend archives prior active schedules for the same year/KW before creating the new active schedule.
+  - Preserved the existing arbitrary start/end generation endpoint for API compatibility, but React Admin now uses year + KW only.
+  - Kept same-office, skill/proficiency, active-agent, office-local availability, min-rest, shift-preference, and weekly-hour constraints.
+  - Improved greedy ranking to balance weekly load while still preferring compatible proficiency and shift preference; no heavy solver dependency was added.
+  - Updated the React admin schedule generation UI to show Year and KW fields, week metadata, archived previous count, and full assignment start/end times.
+  - Documented that legacy schedules without year/KW are not silently mutated and should be archived/cancelled or regenerated where needed.
+- In progress: None.
+- Blockers: None.
+- Files touched:
+  - `agent_communication/PROJECT_DOCS.md`
+  - `agent_communication/TASK_LOG.md`
+  - `agent_communication/USER_MANUAL.md`
+  - `call-center-scheduler/README.md`
+  - `call-center-scheduler/backend/app/api/routers/schedules.py`
+  - `call-center-scheduler/backend/app/models/schedule.py`
+  - `call-center-scheduler/backend/app/repositories/schedules_repository.py`
+  - `call-center-scheduler/backend/app/services/scheduler_service.py`
+  - `call-center-scheduler/backend/tests/test_scheduler_office_constraint.py`
+  - `call-center-scheduler/backend/tests/test_scheduler_week_generation.py`
+  - `react-app/src/pages/AdminPage.tsx`
+  - `react-app/src/types.ts`
+- Commands/tests run:
+  - `python -m py_compile backend\app\models\schedule.py backend\app\services\scheduler_service.py backend\app\api\routers\schedules.py backend\app\repositories\schedules_repository.py` -> passed
+  - `python -m pytest backend\tests\test_scheduler_week_generation.py backend\tests\test_scheduler_office_constraint.py` -> 8 passed
+  - `python -m pytest backend\tests` -> 98 passed
+  - `npm test -- --run` from `react-app` -> 7 passed; Vite printed existing esbuild/oxc deprecation warnings
+  - `npm run build` from `react-app` -> passed; Vite reported the existing large chunk warning
+- Manual verification:
+  - Not run in browser in this pass; automated backend and React checks passed.
+- Open issues:
+  - Existing generated schedules created before SCHED-005 may not have `year`, `week`, `week_start`, or `week_end`; archive/cancel old arbitrary-window schedules or regenerate the intended KW schedule if they should no longer be active.
+  - The scheduler still uses a greedy heuristic. Weekly load balancing was improved, but a stronger solver remains a backlog item if production fairness requirements grow.
+- QA prompt:
+  - Review SCHED-005. Confirm React Admin exposes only Year + KW schedule generation, `POST /api/v1/schedules/generate-week` validates ISO weeks and generates Monday-through-Sunday schedules, previous active schedules for the same year/KW are archived only after successful generation, weekly max hours are enforced across the full week, and same-office scheduling remains intact. Run backend tests and React build; if possible, smoke test admin generation for a KW with demand and verify the response metadata plus archived previous count.

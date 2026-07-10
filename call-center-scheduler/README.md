@@ -199,4 +199,5 @@ Docker builds the React frontend and serves the compiled app through FastAPI.
 - `POST /api/v1/demand-forecasts` (admin)
 - `POST /api/v1/demand-forecasts/upload-csv` (admin)
 - `POST /api/v1/schedules/generate` (admin)
+- `POST /api/v1/schedules/generate-week` (admin; ISO year/KW)
 - `GET /api/v1/dashboard/summary`

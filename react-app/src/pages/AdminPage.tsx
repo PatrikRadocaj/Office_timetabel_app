@@ -105,69 +105,17 @@ const suggestedTimezones = [
   "Europe/Zagreb",
 ];
 
-const toDateTimeLocalValue = (value: Date): string => {
-  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+const getIsoWeekInfo = (value = new Date()): { year: number; week: number } => {
+  const current = new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+  const day = current.getUTCDay() || 7;
+  current.setUTCDate(current.getUTCDate() + 4 - day);
+  const year = current.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil(((current.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return { year, week };
 };
 
-const addDaysToDateValue = (dateValue: string, days: number): string => {
-  const [year, month, day] = dateValue.split("-").map(Number);
-  const value = new Date(Date.UTC(year, month - 1, day));
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-};
-
-const getZonedParts = (value: Date, timeZone: string): { year: number; month: number; day: number; hour: number; minute: number; second: number } => {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
-  const parts = Object.fromEntries(formatter.formatToParts(value).map((part) => [part.type, part.value]));
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    second: Number(parts.second),
-  };
-};
-
-const getTimeZoneOffsetMs = (value: Date, timeZone: string): number => {
-  const parts = getZonedParts(value, timeZone);
-  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-  return asUtc - value.getTime();
-};
-
-const officeLocalDateTimeToUtc = (dateValue: string, timeZone: string, hour = 0, minute = 0): Date => {
-  const [year, month, day] = dateValue.split("-").map(Number);
-  if (!year || !month || !day) {
-    throw new Error("Enter a valid office local date.");
-  }
-
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  const firstPass = new Date(utcGuess.getTime() - getTimeZoneOffsetMs(utcGuess, timeZone));
-  return new Date(utcGuess.getTime() - getTimeZoneOffsetMs(firstPass, timeZone));
-};
-
-const defaultScheduleStart = (): string => {
-  const value = new Date();
-  value.setHours(0, 0, 0, 0);
-  return toDateTimeLocalValue(value);
-};
-
-const defaultScheduleEnd = (): string => {
-  const value = new Date();
-  value.setHours(0, 0, 0, 0);
-  value.setDate(value.getDate() + 1);
-  return toDateTimeLocalValue(value);
-};
+const defaultScheduleWeek = getIsoWeekInfo();
 
 const formatPercent = (value: number): string => `${Math.round(Number(value || 0) * 100)}%`;
 
@@ -385,10 +333,8 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [latestDayView, setLatestDayView] = useState<DemandDayView | null>(null);
   const [adminSummary, setAdminSummary] = useState<DashboardSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
-  const [scheduleOfficeId, setScheduleOfficeId] = useState("");
-  const [scheduleLocalDate, setScheduleLocalDate] = useState(todayIsoDate());
-  const [scheduleStart, setScheduleStart] = useState(defaultScheduleStart);
-  const [scheduleEnd, setScheduleEnd] = useState(defaultScheduleEnd);
+  const [scheduleYear, setScheduleYear] = useState(defaultScheduleWeek.year);
+  const [scheduleWeek, setScheduleWeek] = useState(defaultScheduleWeek.week);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleResult, setScheduleResult] = useState<ScheduleGenerationResponse | null>(null);
   const [editingOffice, setEditingOffice] = useState<EditOfficeState | null>(null);
@@ -400,7 +346,6 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
   const [sessionInvalid, setSessionInvalid] = useState(false);
 
   const officeNameById = useMemo(() => Object.fromEntries(offices.map((office) => [office.id, office.name])), [offices]);
-  const scheduleOffice = useMemo(() => offices.find((office) => office.id === scheduleOfficeId) || null, [offices, scheduleOfficeId]);
   const skillNameById = useMemo(() => Object.fromEntries(skills.map((skill) => [skill.id, skill.name])), [skills]);
   const coverageSummary = useMemo(() => {
     const points = adminSummary?.coverage_points ?? [];
@@ -476,7 +421,6 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
           setAgentOfficeId((current) => current || firstOffice);
           setDemandOfficeId((current) => current || firstOffice);
           setChartOfficeId((current) => current || firstOffice);
-          setScheduleOfficeId((current) => current || firstOffice);
         }
 
         setSelectedDemandSkillIds(skillRows.map((skill) => skill.id));
@@ -1439,61 +1383,36 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
     }
   };
 
-  const applyOfficeLocalScheduleWindow = (days: number) => {
-    clearAdminAlert();
-
-    try {
-      requireValue(scheduleOfficeId, "Schedule office");
-      requireValue(scheduleLocalDate, "Office local date");
-
-      const office = offices.find((item) => item.id === scheduleOfficeId);
-      if (!office) {
-        throw new Error("Choose a valid office for the schedule window.");
-      }
-
-      const startUtc = officeLocalDateTimeToUtc(scheduleLocalDate, office.timezone);
-      const endUtc = officeLocalDateTimeToUtc(addDaysToDateValue(scheduleLocalDate, days), office.timezone);
-
-      setScheduleStart(toDateTimeLocalValue(startUtc));
-      setScheduleEnd(toDateTimeLocalValue(endUtc));
-      setAlert({
-        type: "info",
-        message: `Schedule window set to ${days === 1 ? "one office-local day" : "one office-local week"} for ${office.name} (${office.timezone}).`,
-      });
-    } catch (error) {
-      setAlert({ type: "danger", message: error instanceof Error ? error.message : "Failed to set office-local schedule window" });
-    }
-  };
-
   const generateSchedule = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     clearAdminAlert();
 
     try {
-      requireValue(scheduleStart, "Schedule start");
-      requireValue(scheduleEnd, "Schedule end");
+      const year = Number(scheduleYear);
+      const week = Number(scheduleWeek);
 
-      const start = new Date(scheduleStart);
-      const end = new Date(scheduleEnd);
-
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        throw new Error("Enter a valid schedule window.");
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        throw new Error("Enter a valid schedule year between 2000 and 2100.");
       }
-      if (end <= start) {
-        throw new Error("Schedule end must be after schedule start.");
+      if (!Number.isInteger(week) || week < 1 || week > 53) {
+        throw new Error("Enter a valid ISO week number from 1 to 53.");
       }
 
       setScheduleLoading(true);
-      const result = await apiRequest<ScheduleGenerationResponse>("/schedules/generate", {
+      const result = await apiRequest<ScheduleGenerationResponse>("/schedules/generate-week", {
         method: "POST",
         body: {
-          start_at: start.toISOString(),
-          end_at: end.toISOString(),
+          year,
+          week,
         },
       });
 
       setScheduleResult(result);
-      setAlert({ type: "success", message: `Schedule ${result.schedule_id} generated.` });
+      const documentNote = result.document_count && result.document_count > 1 ? ` (${result.document_count} documents)` : "";
+      setAlert({
+        type: "success",
+        message: `Schedule ${result.schedule_id} generated for ${result.year ?? year} KW ${String(result.week ?? week).padStart(2, "0")}${documentNote}.`,
+      });
 
       const refreshes: Array<Promise<unknown>> = [loadAdminSummary({ preserveAlert: true })];
       if (chartOfficeId && chartDate) {
@@ -1625,76 +1544,43 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
           <div className="col-12 col-xxl-7">
             <div className="card ccs-card h-100">
               <div className="card-header">
-                <h6 className="mb-0">Schedule Generation</h6>
+                <h6 className="mb-0">Weekly Schedule Generation</h6>
               </div>
               <div className="card-body">
                 <form className="row g-3 align-items-end" onSubmit={generateSchedule}>
-                  <div className="col-12">
-                    <div className="border rounded p-3">
-                      <div className="row g-3 align-items-end">
-                        <div className="col-md-5">
-                          <label className="form-label">Office-local helper</label>
-                          <select className="form-select" value={scheduleOfficeId} onChange={(event) => setScheduleOfficeId(event.target.value)}>
-                            <option value="">Choose office</option>
-                            {offices.map((office) => (
-                              <option key={office.id} value={office.id}>
-                                {office.name} ({office.timezone})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="col-md-3">
-                          <label className="form-label">Local date</label>
-                          <input
-                            className="form-control"
-                            type="date"
-                            value={scheduleLocalDate}
-                            onChange={(event) => setScheduleLocalDate(event.target.value)}
-                          />
-                        </div>
-                        <div className="col-md-4 d-flex flex-wrap gap-2">
-                          <button className="btn btn-outline-secondary flex-fill" type="button" onClick={() => applyOfficeLocalScheduleWindow(1)}>
-                            Use Day
-                          </button>
-                          <button className="btn btn-outline-secondary flex-fill" type="button" onClick={() => applyOfficeLocalScheduleWindow(7)}>
-                            Use Week
-                          </button>
-                        </div>
-                      </div>
-                      <div className="small ccs-muted mt-2">
-                        Helper buttons set the UTC generation window from midnight in the selected office timezone
-                        {scheduleOffice ? ` (${scheduleOffice.timezone})` : ""}. The Start and End fields below still display in your browser local time.
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-md-5">
-                    <label className="form-label">Start</label>
+                  <div className="col-md-4">
+                    <label className="form-label">Year</label>
                     <input
                       className="form-control"
-                      type="datetime-local"
-                      value={scheduleStart}
-                      onChange={(event) => setScheduleStart(event.target.value)}
+                      type="number"
+                      min={2000}
+                      max={2100}
+                      value={scheduleYear}
+                      onChange={(event) => setScheduleYear(Number(event.target.value))}
                       required
                     />
                   </div>
-                  <div className="col-md-5">
-                    <label className="form-label">End</label>
+                  <div className="col-md-4">
+                    <label className="form-label">KW / ISO week</label>
                     <input
                       className="form-control"
-                      type="datetime-local"
-                      value={scheduleEnd}
-                      onChange={(event) => setScheduleEnd(event.target.value)}
+                      type="number"
+                      min={1}
+                      max={53}
+                      value={scheduleWeek}
+                      onChange={(event) => setScheduleWeek(Number(event.target.value))}
                       required
                     />
                   </div>
-                  <div className="col-md-2 d-grid">
+                  <div className="col-md-4 d-grid">
                     <button className="btn btn-primary" type="submit" disabled={scheduleLoading}>
                       {scheduleLoading ? "Generating..." : "Generate"}
                     </button>
                   </div>
                   <div className="col-12">
                     <div className="small ccs-muted">
-                      Manual Start/End values are interpreted by your browser as local time and sent to the backend as UTC.
+                      Generates the full ISO week from Monday 00:00 UTC through the next Monday 00:00 UTC. Weekly hour limits are enforced across the whole week.
+                      Regenerating the same KW archives the previous active schedule for that year/week before creating the new active schedule.
                     </div>
                   </div>
                 </form>
@@ -1707,6 +1593,20 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                         <div className="fw-semibold text-break">{scheduleResult.schedule_id}</div>
                       </div>
                       <div className="col-6 col-md-3">
+                        <div className="small ccs-muted">KW</div>
+                        <div className="fw-semibold">
+                          {scheduleResult.year ?? scheduleYear} / {String(scheduleResult.week ?? scheduleWeek).padStart(2, "0")}
+                        </div>
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <div className="small ccs-muted">Week range</div>
+                        <div className="fw-semibold">
+                          {scheduleResult.week_start && scheduleResult.week_end
+                            ? `${formatDateTime(scheduleResult.week_start)} - ${formatDateTime(scheduleResult.week_end)}`
+                            : "Unavailable"}
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
                         <div className="small ccs-muted">Required</div>
                         <div className="fw-semibold">{scheduleResult.total_required}</div>
                       </div>
@@ -1717,6 +1617,10 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                       <div className="col-6 col-md-3">
                         <div className="small ccs-muted">Uncovered</div>
                         <div className="fw-semibold">{scheduleResult.uncovered_demand}</div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <div className="small ccs-muted">Archived previous</div>
+                        <div className="fw-semibold">{scheduleResult.archived_schedule_ids?.length ?? 0}</div>
                       </div>
                     </div>
 
@@ -1739,7 +1643,9 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                               <tr key={`${assignment.office_id}-${assignment.skill_id}-${assignment.slot_start}-${index}`}>
                                 <td>{officeNameById[assignment.office_id] || assignment.office_id}</td>
                                 <td>{skillNameById[assignment.skill_id] || assignment.skill_id}</td>
-                                <td>{formatDateTime(assignment.slot_start)}</td>
+                                <td>
+                                  {formatDateTime(assignment.slot_start)} - {formatDateTime(assignment.slot_end)}
+                                </td>
                                 <td>{assignment.required_agents}</td>
                                 <td>{assignment.assigned_agent_ids.length}</td>
                                 <td>{assignment.gap}</td>
@@ -1749,12 +1655,12 @@ export default function AdminPage({ user, onSessionChange }: AdminPageProps) {
                           </tbody>
                         </table>
                       ) : (
-                        <p className="ccs-muted mb-0">Schedule generated with no assignment rows for this window.</p>
+                        <p className="ccs-muted mb-0">Schedule generated with no assignment rows for this week.</p>
                       )}
                     </div>
                   </div>
                 ) : (
-                  <p className="small ccs-muted mt-3 mb-0">Choose a window with saved demand forecasts, then generate a schedule.</p>
+                  <p className="small ccs-muted mt-3 mb-0">Choose a year and KW with saved demand forecasts, then generate a schedule.</p>
                 )}
               </div>
             </div>

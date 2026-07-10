@@ -9,6 +9,7 @@ from app.repositories.firestore_repository import FirestoreRepository
 
 
 ACTIVE_SCHEDULE_STATUS = "active"
+ARCHIVED_SCHEDULE_STATUS = "archived"
 
 
 def _as_utc(value: datetime | str) -> datetime:
@@ -51,3 +52,25 @@ class SchedulesRepository(FirestoreRepository):
 
     def count_active(self) -> int:
         return self.count(filters=[("status", "==", ACTIVE_SCHEDULE_STATUS)])
+
+    def list_active_for_week(self, year: int, week: int) -> list[dict]:
+        rows = self.list(
+            filters=[
+                ("status", "==", ACTIVE_SCHEDULE_STATUS),
+                ("year", "==", int(year)),
+                ("week", "==", int(week)),
+            ]
+        )
+        rows.sort(key=lambda row: _as_utc(row.get("generated_at", row.get("created_at"))), reverse=True)
+        return rows
+
+    def archive_active_for_week(self, year: int, week: int, exclude_ids: list[str] | None = None) -> list[str]:
+        excluded = {str(schedule_id) for schedule_id in exclude_ids or []}
+        archived_ids: list[str] = []
+        for schedule in self.list_active_for_week(year, week):
+            schedule_id = str(schedule["id"])
+            if schedule_id in excluded:
+                continue
+            self.update(schedule_id, {"status": ARCHIVED_SCHEDULE_STATUS})
+            archived_ids.append(schedule_id)
+        return archived_ids
