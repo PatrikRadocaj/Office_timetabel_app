@@ -3,6 +3,21 @@
 This file is append-only. Add new entries at the top or bottom consistently; current convention is newest first under this header.
 
 ## Status Update
+- Agent: Codex
+- Role: Driver
+- Task ID: DEPLOY-001 Render hosting preparation
+- Timestamp: 2026-07-10 09:43:08 +02:00
+- Current state: Repository prepared for Render Free deployment, but live deployment was not created because this environment has no authenticated Render CLI, Render API token, Firebase CLI, Google Cloud CLI, Vercel CLI, or hosting project configuration.
+- Completed:
+  - Added root `render.yaml` for a single Docker web service on Render Free.
+  - Updated `call-center-scheduler/backend/Dockerfile` to honor Render's `PORT` environment variable while retaining local default port 8000.
+  - Documented Render hosting setup and required Firebase secret environment variables in `USER_MANUAL.md`.
+- Required user/account step:
+  - Connect the GitHub repository to Render and provide `FIREBASE_PROJECT_ID`, `FIREBASE_WEB_API_KEY`, and secret `FIREBASE_SERVICE_ACCOUNT_JSON` in the Render dashboard.
+- Security note:
+  - No service-account JSON or secret values were written to repository files.
+
+## Status Update
 - Agent: Claude
 - Role: Driver (SCHED-005 closeout — user handed the Driver prompt to Claude; Codex may review)
 - Task ID: SCHED-005 closeout (unblock + findings + commit)

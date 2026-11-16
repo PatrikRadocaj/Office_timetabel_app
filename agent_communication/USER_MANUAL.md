@@ -136,6 +136,20 @@ docker compose up --build
 
 Docker builds the React frontend and serves it through FastAPI at `http://localhost:8000/`.
 
+### Render Free Hosting
+
+The repository includes `render.yaml` for a single Render web service. Render builds the React frontend inside the Docker image and serves the compiled app through FastAPI.
+
+Required Render environment variables:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_WEB_API_KEY`
+- `FIREBASE_SERVICE_ACCOUNT_JSON`
+
+Set `FIREBASE_SERVICE_ACCOUNT_JSON` as a secret value in Render. Do not commit a service-account JSON file.
+
+After connecting the GitHub repository to Render, choose the free web service plan. The health check path is `/api/health`.
+
 ## Seeding Sample Data
 
 After Firebase is configured:

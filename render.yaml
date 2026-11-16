@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: call-center-scheduler
+    runtime: docker
+    plan: free
+    dockerContext: .
+    dockerfilePath: ./call-center-scheduler/backend/Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: APP_NAME
+        value: Call Center Scheduler API
+      - key: API_V1_PREFIX
+        value: /api/v1
+      - key: ENVIRONMENT
+        value: production
+      - key: CORS_ORIGINS
+        value: https://call-center-scheduler.onrender.com
+      - key: SCHEDULE_SLOT_MINUTES
+        value: 30
+      - key: DEFAULT_SHIFT_HOURS
+        value: 8
+      - key: MAX_WEEKLY_HOURS_HARD_LIMIT
+        value: 60
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
